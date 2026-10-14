@@ -5730,6 +5730,7 @@ dependencies = [
  "tachyon-engine",
  "unicode-segmentation",
  "url",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5752,6 +5753,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

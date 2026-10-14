@@ -1,0 +1,23 @@
+name: Windows
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p tachyon-engine
+      - run: cargo build --release -p tachyon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tachyon-windows-x64
+          path: |
+            target/release/tachyon.exe
+            extension/

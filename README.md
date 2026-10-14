@@ -107,6 +107,25 @@ without confirmation unless you opt in.
 
 Requires a recent stable Rust (developed with 1.99) and Xcode (GPUI compiles Metal shaders).
 
+### Windows
+
+Requires a recent stable Rust with the MSVC toolchain and Visual Studio Build Tools
+(the *Desktop development with C++* workload). GPUI renders through DirectX 11.
+
+```powershell
+winget install Rustlang.Rustup
+winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+cargo run --release -p tachyon
+cargo test -p tachyon-engine
+```
+
+State lives in `%APPDATA%\Tachyon`. Part files are marked sparse on NTFS so segments can
+write anywhere in a preallocated file without Windows zero-filling the gap first. Shortcuts
+use Ctrl instead of ⌘, and *Options on completion* can sleep or shut down the PC.
+The browser extension talks to the same `127.0.0.1:7311` endpoint as on macOS.
+
+On macOS:
+
 ```sh
 cargo run --release -p tachyon          # run the app
 cargo test --workspace                  # engine + app tests

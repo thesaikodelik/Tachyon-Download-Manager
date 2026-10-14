@@ -292,7 +292,8 @@ async fn run_inner(
         .truncate(!continuing)
         .open(&part)?;
     if let Some(total) = info.total {
-        // Sparse on APFS, so this reserves nothing up front but lets segments write anywhere.
+        // Sparse, so this reserves nothing up front but lets segments write anywhere.
+        crate::fsutil::make_sparse(&file);
         file.set_len(total)?;
     }
     let file = Arc::new(file);

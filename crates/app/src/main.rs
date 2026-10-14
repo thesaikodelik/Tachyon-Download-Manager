@@ -1,5 +1,8 @@
-//! Tachyon Download Manager: a native macOS download accelerator inspired by
-//! Internet Download Manager, written in Rust with GPUI.
+//! Tachyon Download Manager: a native download accelerator for macOS and Windows
+//! inspired by Internet Download Manager, written in Rust with GPUI.
+
+// No console window behind the app in release builds on Windows.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod add_dialog;
 mod app;
@@ -102,12 +105,12 @@ fn register_actions(cx: &mut App) {
     });
 
     cx.bind_keys([
-        KeyBinding::new("cmd-q", Quit, None),
-        KeyBinding::new("cmd-n", AddUrl, None),
-        KeyBinding::new("cmd-,", ShowOptions, None),
-        KeyBinding::new("cmd-shift-s", ShowScheduler, None),
-        KeyBinding::new("cmd-0", ShowMainWindow, None),
-        KeyBinding::new("cmd-w", CloseWindow, None),
+        KeyBinding::new("secondary-q", Quit, None),
+        KeyBinding::new("secondary-n", AddUrl, None),
+        KeyBinding::new("secondary-,", ShowOptions, None),
+        KeyBinding::new("secondary-shift-s", ShowScheduler, None),
+        KeyBinding::new("secondary-0", ShowMainWindow, None),
+        KeyBinding::new("secondary-w", CloseWindow, None),
     ]);
 }
 

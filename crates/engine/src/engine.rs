@@ -61,7 +61,8 @@ fn now() -> i64 {
 }
 
 impl Engine {
-    /// Opens the engine with state in `~/Library/Application Support/Tachyon`.
+    /// Opens the engine with state in the platform data directory (`~/Library/Application
+    /// Support/Tachyon` on macOS, `%APPDATA%\Tachyon` on Windows).
     pub fn open_default() -> anyhow::Result<Self> {
         let dir = dirs::data_dir()
             .ok_or_else(|| anyhow::anyhow!("no Application Support directory"))?

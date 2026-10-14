@@ -9,7 +9,6 @@
 
 use std::fs::File;
 use std::io;
-use std::os::unix::fs::FileExt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -72,7 +71,7 @@ impl Segment {
         let room = c.end.saturating_sub(c.pos);
         let n = (data.len() as u64).min(room) as usize;
         if n > 0 {
-            file.write_all_at(&data[..n], c.pos)?;
+            crate::fsutil::write_all_at(file, &data[..n], c.pos)?;
             c.pos += n as u64;
         }
         Ok(n)

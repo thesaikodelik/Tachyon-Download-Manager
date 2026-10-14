@@ -3,6 +3,17 @@ use std::path::{Path, PathBuf};
 use chrono::{Local, TimeZone};
 use tachyon_engine::{DownloadSnapshot, DownloadStatus};
 
+/// Label for the action that shows a file in the system file manager.
+pub const REVEAL_LABEL: &str = if cfg!(target_os = "macos") { "Show in Finder" } else { "Show in Explorer" };
+
+/// What the user calls their computer, for the shut-down/sleep countdown.
+pub const COMPUTER: &str = if cfg!(target_os = "macos") { "Your Mac" } else { "Your PC" };
+
+/// Formats a `secondary-` shortcut for display: `⌘N` on macOS, `Ctrl+N` elsewhere.
+pub fn shortcut(key: &str) -> String {
+    if cfg!(target_os = "macos") { format!("⌘{key}") } else { format!("Ctrl+{key}") }
+}
+
 pub fn bytes(n: u64) -> String {
     const UNITS: [&str; 5] = ["KB", "MB", "GB", "TB", "PB"];
     if n < 1024 {

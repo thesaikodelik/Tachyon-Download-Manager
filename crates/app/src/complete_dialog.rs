@@ -93,7 +93,7 @@ impl Render for CompleteDialog {
                     .px(px(20.))
                     .py(px(12.))
                     .bg(theme.chrome)
-                    .child(Button::new("folder", "Show in Finder").icon(Icon::Folder).on_click({
+                    .child(Button::new("folder", format::REVEAL_LABEL).icon(Icon::Folder).on_click({
                         let path = path.clone();
                         cx.listener(move |this, _, window, cx| {
                             cx.reveal_path(&path);

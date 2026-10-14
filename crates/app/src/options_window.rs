@@ -215,7 +215,7 @@ impl OptionsWindow {
             .child(div().h(px(6.)))
             .child(section_title("Network", theme))
             .child(Self::row("Proxy", self.proxy.clone(), theme))
-            .child(Self::hint("Leave empty to use the macOS system proxy. Example: socks5://127.0.0.1:1080", theme))
+            .child(Self::hint("Leave empty to use the system proxy. Example: socks5://127.0.0.1:1080", theme))
             .child(Self::row("User agent", self.user_agent.clone(), theme))
             .into_any_element()
     }

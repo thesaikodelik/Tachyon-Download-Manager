@@ -36,23 +36,32 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("alt-right", WordRight, ctx),
         KeyBinding::new("shift-left", SelectLeft, ctx),
         KeyBinding::new("shift-right", SelectRight, ctx),
-        KeyBinding::new("cmd-a", SelectAll, ctx),
-        KeyBinding::new("cmd-v", Paste, ctx),
-        KeyBinding::new("cmd-c", Copy, ctx),
-        KeyBinding::new("cmd-x", Cut, ctx),
+        KeyBinding::new("secondary-a", SelectAll, ctx),
+        KeyBinding::new("secondary-v", Paste, ctx),
+        KeyBinding::new("secondary-c", Copy, ctx),
+        KeyBinding::new("secondary-x", Cut, ctx),
         KeyBinding::new("home", Home, ctx),
         KeyBinding::new("end", End, ctx),
-        KeyBinding::new("cmd-left", Home, ctx),
-        KeyBinding::new("cmd-right", End, ctx),
         KeyBinding::new("shift-home", SelectHome, ctx),
         KeyBinding::new("shift-end", SelectEnd, ctx),
-        KeyBinding::new("cmd-shift-left", SelectHome, ctx),
-        KeyBinding::new("cmd-shift-right", SelectEnd, ctx),
-        KeyBinding::new("cmd-backspace", DeleteToStart, ctx),
         KeyBinding::new("enter", Submit, ctx),
         KeyBinding::new("escape", Cancel, ctx),
         KeyBinding::new("tab", FocusNext, ctx),
         KeyBinding::new("shift-tab", FocusPrev, ctx),
+    ]);
+    // Line-start/end and word movement use different modifiers per platform.
+    #[cfg(target_os = "macos")]
+    cx.bind_keys([
+        KeyBinding::new("cmd-left", Home, ctx),
+        KeyBinding::new("cmd-right", End, ctx),
+        KeyBinding::new("cmd-shift-left", SelectHome, ctx),
+        KeyBinding::new("cmd-shift-right", SelectEnd, ctx),
+        KeyBinding::new("cmd-backspace", DeleteToStart, ctx),
+    ]);
+    #[cfg(not(target_os = "macos"))]
+    cx.bind_keys([
+        KeyBinding::new("ctrl-left", WordLeft, ctx),
+        KeyBinding::new("ctrl-right", WordRight, ctx),
     ]);
 }
 

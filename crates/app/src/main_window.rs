@@ -33,12 +33,12 @@ pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("backspace", DeleteSelected, ctx),
         KeyBinding::new("delete", DeleteSelected, ctx),
-        KeyBinding::new("cmd-a", SelectAllRows, ctx),
+        KeyBinding::new("secondary-a", SelectAllRows, ctx),
         KeyBinding::new("enter", OpenSelected, ctx),
-        KeyBinding::new("cmd-o", OpenSelected, ctx),
-        KeyBinding::new("cmd-r", ResumeSelected, ctx),
-        KeyBinding::new("cmd-.", StopSelected, ctx),
-        KeyBinding::new("cmd-shift-r", RevealSelected, ctx),
+        KeyBinding::new("secondary-o", OpenSelected, ctx),
+        KeyBinding::new("secondary-r", ResumeSelected, ctx),
+        KeyBinding::new("secondary-.", StopSelected, ctx),
+        KeyBinding::new("secondary-shift-r", RevealSelected, ctx),
     ]);
 }
 
@@ -399,7 +399,7 @@ impl MainWindow {
             .child(
                 ToolbarButton::new("tb-add", "Add URL", Icon::Add)
                     .tint(theme.accent)
-                    .tooltip("Add a new download (⌘N)")
+                    .tooltip(format!("Add a new download ({})", format::shortcut("N")))
                     .on_click(|_, _, cx| app::open_add_dialog(AddPrefill::FromClipboard, cx)),
             )
             .child(divider())
@@ -760,7 +760,14 @@ impl MainWindow {
 
     fn render_empty(&self, theme: &Theme) -> impl IntoElement {
         let (title, hint) = match self.filter {
-            Filter::All => ("No downloads yet", "Copy a link and press ⌘N, or click “Add URL”."),
+            Filter::All => (
+                "No downloads yet",
+                if cfg!(target_os = "macos") {
+                    "Copy a link and press ⌘N, or click “Add URL”."
+                } else {
+                    "Copy a link and press Ctrl+N, or click “Add URL”."
+                },
+            ),
             Filter::Queue => ("The queue is empty", "Choose “Download Later” or right-click a download to queue it."),
             _ => ("Nothing here", "Downloads in this view will appear here."),
         };
@@ -847,7 +854,7 @@ impl MainWindow {
             let ids: Vec<_> = this.selected.iter().copied().collect();
             ids.into_iter().for_each(|id| this.open(id, cx));
         }))));
-        entries.push(Some(("Show in Finder", Icon::Folder, single, Box::new(|this, _, cx| this.reveal(cx)))));
+        entries.push(Some((format::REVEAL_LABEL, Icon::Folder, single, Box::new(|this, _, cx| this.reveal(cx)))));
         entries.push(Some(("Progress Window", Icon::Info, single && !completed, Box::new(|this, _, cx| {
             if let Some(&id) = this.selected.iter().next() {
                 app::open_progress_window(id, cx);
@@ -1038,7 +1045,7 @@ impl Render for AboutWindow {
                     .text_size(px(12.))
                     .text_color(theme.muted)
                     .text_center()
-                    .child("Multi-connection download accelerator for macOS. Built in Rust with GPUI."),
+                    .child("Multi-connection download accelerator for macOS and Windows. Built in Rust with GPUI."),
             )
     }
 }

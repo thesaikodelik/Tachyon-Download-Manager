@@ -8,6 +8,7 @@ use gpui::{App, Context, FontWeight, Task, Window, div, prelude::*, px};
 use tachyon_engine::PostAction;
 
 use crate::assets::Icon;
+use crate::format;
 use crate::theme::Theme;
 use crate::widgets::{Button, icon, separator};
 
@@ -61,24 +62,52 @@ pub fn perform(action: PostAction, cx: &mut App) {
             cx.quit();
             return;
         }
-        PostAction::Sleep => Command::new("/usr/bin/pmset").arg("sleepnow").status(),
-        PostAction::ShutDown => Command::new("/usr/bin/osascript")
-            .args(["-e", "tell application \"System Events\" to shut down"])
-            .status(),
+        PostAction::Sleep => sleep(),
+        PostAction::ShutDown => shut_down(),
     };
     if let Err(e) = result {
         log::error!("could not run {action:?}: {e}");
     }
 }
 
+#[cfg(target_os = "macos")]
+fn sleep() -> std::io::Result<std::process::ExitStatus> {
+    Command::new("/usr/bin/pmset").arg("sleepnow").status()
+}
+
+#[cfg(target_os = "macos")]
+fn shut_down() -> std::io::Result<std::process::ExitStatus> {
+    Command::new("/usr/bin/osascript")
+        .args(["-e", "tell application \"System Events\" to shut down"])
+        .status()
+}
+
+/// Suspends (not hibernates) the PC. `rundll32 powrprof.dll,SetSuspendState` is
+/// avoided because it hibernates whenever hibernation is enabled.
+#[cfg(windows)]
+fn sleep() -> std::io::Result<std::process::ExitStatus> {
+    use std::os::windows::process::ExitStatusExt;
+    // SAFETY: plain Win32 call with no pointers.
+    let ok = unsafe { windows_sys::Win32::System::Power::SetSuspendState(0, 0, 0) };
+    if ok == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(std::process::ExitStatus::from_raw(0))
+}
+
+#[cfg(windows)]
+fn shut_down() -> std::io::Result<std::process::ExitStatus> {
+    Command::new("shutdown").args(["/s", "/t", "0"]).status()
+}
+
 impl Render for PostActionDialog {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(window);
         let what = match self.action {
-            PostAction::QuitApp => "Tachyon will quit",
-            PostAction::Sleep => "Your Mac will go to sleep",
-            PostAction::ShutDown => "Your Mac will shut down",
-            PostAction::Nothing => "",
+            PostAction::QuitApp => "Tachyon will quit".to_string(),
+            PostAction::Sleep => format!("{} will go to sleep", format::COMPUTER),
+            PostAction::ShutDown => format!("{} will shut down", format::COMPUTER),
+            PostAction::Nothing => String::new(),
         };
         div()
             .size_full()

@@ -47,22 +47,79 @@ fn first_free(name: &str, free: impl Fn(&str) -> bool) -> String {
         .expect("unbounded search")
 }
 
+/// Asks the file system to store `file` sparsely, so a segment can write far into
+/// a preallocated file without the gap being zero-filled first. APFS and ext4 do
+/// this already; NTFS needs to be told. Failure (e.g. on FAT32) only costs speed.
+pub fn make_sparse(file: &std::fs::File) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::IO::DeviceIoControl;
+        use windows_sys::Win32::System::Ioctl::FSCTL_SET_SPARSE;
+        let mut returned = 0u32;
+        // SAFETY: the handle is valid for the lifetime of `file`; FSCTL_SET_SPARSE
+        // takes no input or output buffers.
+        let ok = unsafe {
+            DeviceIoControl(
+                file.as_raw_handle(),
+                FSCTL_SET_SPARSE,
+                std::ptr::null(),
+                0,
+                std::ptr::null_mut(),
+                0,
+                &mut returned,
+                std::ptr::null_mut(),
+            )
+        };
+        if ok == 0 {
+            log::debug!("could not mark part file sparse: {}", std::io::Error::last_os_error());
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = file;
+}
+
+/// Writes all of `data` at `offset` without moving a shared file cursor, so
+/// several connections can write into the same part file concurrently.
+pub fn write_all_at(file: &std::fs::File, data: &[u8], offset: u64) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::FileExt::write_all_at(file, data, offset)
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileExt;
+        let (mut data, mut offset) = (data, offset);
+        while !data.is_empty() {
+            match file.seek_write(data, offset) {
+                Ok(0) => return Err(std::io::ErrorKind::WriteZero.into()),
+                Ok(n) => {
+                    data = &data[n..];
+                    offset += n as u64;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Writes `contents` to `path` atomically via a temporary sibling file.
 /// The file is private to the user since it can hold cookies and passwords.
 pub fn write_atomic(path: &Path, contents: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let tmp = path.with_extension("tmp");
     {
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&tmp)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        // On Windows the per-user AppData directory is already private to the user.
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let mut file = options.open(&tmp)?;
         file.write_all(contents)?;
         file.sync_all()?;
     }
