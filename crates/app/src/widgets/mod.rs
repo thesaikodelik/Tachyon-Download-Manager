@@ -470,6 +470,11 @@ pub fn fit_window_height(content: impl IntoElement) -> impl IntoElement {
                 let wanted = bounds.size.height.round();
                 let current = window.viewport_size();
                 if (f32::from(wanted) - f32::from(current.height)).abs() > 0.5 {
+                    // Before the window is first shown, keep it centred where it was
+                    // placed; once shown, it grows downwards like other Windows dialogs.
+                    if crate::platform::is_cloaked(window) {
+                        crate::platform::move_window_by(window, (current.height - wanted) / 2.);
+                    }
                     // Takes effect after this frame; the next layout then matches.
                     window.resize(size(current.width, wanted));
                 }

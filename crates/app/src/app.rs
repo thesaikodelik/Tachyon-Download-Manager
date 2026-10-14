@@ -196,8 +196,26 @@ pub fn open_styled<V: Render + 'static>(
     })
 }
 
-pub fn centered(size: Size<Pixels>, cx: &App) -> Bounds<Pixels> {
-    Bounds::centered(None, size, cx)
+/// Where a window of `size` opens: centred over the main window while it is on
+/// screen, as Windows dialogs are, otherwise in the middle of the screen.
+pub fn centered(size: Size<Pixels>, cx: &mut App) -> Bounds<Pixels> {
+    let main = cx.try_global::<AppState>().and_then(|state| state.main_window);
+    let over_main = main.and_then(|handle| {
+        handle
+            .update(cx, |_, window, _| crate::platform::is_on_screen(window).then(|| window.bounds()))
+            .ok()
+            .flatten()
+    });
+    match over_main {
+        Some(main) => Bounds::new(
+            point(
+                main.origin.x + (main.size.width - size.width) / 2.,
+                main.origin.y + (main.size.height - size.height) / 2.,
+            ),
+            size,
+        ),
+        None => Bounds::centered(None, size, cx),
+    }
 }
 
 /// Windows 11 styles draw their own title bar on the window's glass.

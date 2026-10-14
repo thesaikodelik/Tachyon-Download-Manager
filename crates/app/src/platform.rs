@@ -106,6 +106,21 @@ pub fn has_custom_title_bar(window: &Window) -> bool {
     imp::has_custom_title_bar(window)
 }
 
+/// Whether `window` is still cloaked by [`cloak`] (created but not yet shown).
+pub fn is_cloaked(window: &Window) -> bool {
+    imp::is_cloaked(window)
+}
+
+/// Moves `window` down by `dy` (up when negative), in logical pixels.
+pub fn move_window_by(window: &Window, dy: gpui::Pixels) {
+    imp::move_window_by(window, dy)
+}
+
+/// Whether `window` is showing (not hidden in the notification area, not minimized).
+pub fn is_on_screen(window: &Window) -> bool {
+    imp::is_on_screen(window)
+}
+
 /// Hides a window without destroying it, so the app keeps running in the tray.
 pub fn hide_window(window: &Window) {
     imp::hide_window(window)
@@ -431,6 +446,47 @@ mod imp {
         }
     }
 
+    pub fn is_cloaked(window: &Window) -> bool {
+        use windows_sys::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
+        let Some(hwnd) = hwnd(window) else { return false };
+        let mut cloaked: u32 = 0;
+        // SAFETY: the out-parameter is a DWORD, as DWMWA_CLOAKED expects.
+        let status = unsafe {
+            DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED as u32, (&raw mut cloaked).cast(), size_of::<u32>() as u32)
+        };
+        status == 0 && cloaked != 0
+    }
+
+    pub fn move_window_by(window: &Window, dy: gpui::Pixels) {
+        use windows_sys::Win32::Foundation::RECT;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetWindowRect, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+        };
+        let Some(hwnd) = hwnd(window) else { return };
+        let dy = (f32::from(dy) * window.scale_factor()).round() as i32;
+        // SAFETY: plain calls on a live window handle.
+        unsafe {
+            let mut rect: RECT = std::mem::zeroed();
+            if GetWindowRect(hwnd, &mut rect) != 0 {
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    rect.left,
+                    rect.top + dy,
+                    0,
+                    0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+        }
+    }
+
+    pub fn is_on_screen(window: &Window) -> bool {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
+        // SAFETY: plain queries on a live window handle.
+        hwnd(window).is_some_and(|hwnd| unsafe { IsWindowVisible(hwnd) != 0 && IsIconic(hwnd) == 0 })
+    }
+
     pub fn hide_window(window: &Window) {
         if let Some(hwnd) = hwnd(window) {
             // SAFETY: `hwnd` belongs to a live GPUI window.
@@ -505,6 +561,16 @@ mod imp {
     }
 
     pub fn hide_window(_: &Window) {}
+
+    pub fn is_on_screen(_: &Window) -> bool {
+        true
+    }
+
+    pub fn is_cloaked(_: &Window) -> bool {
+        false
+    }
+
+    pub fn move_window_by(_: &Window, _: gpui::Pixels) {}
 
     pub fn show_window(_: &Window) {}
 
