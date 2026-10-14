@@ -7,8 +7,7 @@ use std::time::Duration;
 use gpui::{
     AnyElement, App, AppContext, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight,
     KeyBinding, MouseButton, MouseDownEvent, Pixels, Point, PromptLevel, SharedString, Task,
-    UniformListScrollHandle, Window, WindowBounds, actions, anchored, deferred, div, prelude::*, px,
-    size, uniform_list,
+    UniformListScrollHandle, Window, actions, anchored, deferred, div, prelude::*, px, uniform_list,
 };
 use tachyon_engine::{DownloadId, DownloadSnapshot, DownloadStatus, Engine, GENERAL};
 
@@ -1053,41 +1052,4 @@ impl Render for MainWindow {
             }),
             )
     }
-}
-
-/// Small "About" window.
-pub struct AboutWindow;
-
-impl Render for AboutWindow {
-    fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::of(window);
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .gap(px(8.))
-            .bg(theme.bg)
-            .text_color(theme.text)
-            .child(icon(Icon::Bolt, px(48.), theme.icon))
-            .child(div().text_size(px(18.)).font_weight(FontWeight::SEMIBOLD).child("Tachyon Download Manager"))
-            .child(div().text_size(px(12.)).text_color(theme.muted).child(format!("Version {}", env!("CARGO_PKG_VERSION"))))
-            .child(
-                div()
-                    .px(px(28.))
-                    .pt(px(6.))
-                    .text_size(px(12.))
-                    .text_color(theme.muted)
-                    .text_center()
-                    .child("Multi-connection download accelerator for macOS and Windows. Built in Rust with GPUI."),
-            )
-    }
-}
-
-pub fn show_about(cx: &mut App) {
-    let bounds = app::centered(size(px(380.), px(240.)), cx);
-    let mut options = app::dialog_options("About Tachyon", bounds);
-    options.window_bounds = Some(WindowBounds::Windowed(bounds));
-    app::open_styled(options, cx, |_, cx| cx.new(|_| AboutWindow)).ok();
 }

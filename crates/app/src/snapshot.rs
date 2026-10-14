@@ -260,7 +260,7 @@ fn run_command(line: &str, cx: &mut App) {
         "main" => crate::app::open_main_window(cx),
         "options" => crate::app::open_options(cx),
         "scheduler" => crate::app::open_scheduler(cx),
-        "about" => crate::main_window::show_about(cx),
+        "about" => crate::brand::show_about(cx),
         "add" => crate::app::open_add_dialog(AddPrefill::Url(arg.trim().to_string()), cx),
         "progress" => crate::app::open_progress_window(number.unwrap_or(1), cx),
         "complete" => crate::app::open_complete_dialog(number.unwrap_or(1), cx),

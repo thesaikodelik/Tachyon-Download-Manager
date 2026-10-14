@@ -20,6 +20,12 @@ pub fn supports_backdrops() -> bool {
     imp::supports_backdrops()
 }
 
+/// Whether the user wants animations (Windows Settings → Accessibility → Visual
+/// effects → Animation effects). Decorative motion stops when it is off.
+pub fn animations_enabled() -> bool {
+    imp::animations_enabled()
+}
+
 /// Windows 11 (build 22000 or later), which has the Segoe Fluent Icons font.
 pub fn is_windows_11() -> bool {
     imp::is_windows_11()
@@ -146,6 +152,14 @@ mod imp {
     pub fn supports_backdrops() -> bool {
         static SUPPORTED: OnceLock<bool> = OnceLock::new();
         *SUPPORTED.get_or_init(|| build_number().is_some_and(|build| build >= 17763))
+    }
+
+    pub fn animations_enabled() -> bool {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SPI_GETCLIENTAREAANIMATION, SystemParametersInfoW};
+        let mut enabled: i32 = 1;
+        // SAFETY: the out-parameter is a BOOL, as SPI_GETCLIENTAREAANIMATION expects.
+        unsafe { SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, (&raw mut enabled).cast(), 0) };
+        enabled != 0
     }
 
     pub fn is_windows_11() -> bool {
@@ -468,6 +482,10 @@ mod imp {
 
     pub fn is_windows_11() -> bool {
         false
+    }
+
+    pub fn animations_enabled() -> bool {
+        true
     }
 
     pub fn style_window(_: &mut Window, _: Backdrop, _: bool) -> bool {

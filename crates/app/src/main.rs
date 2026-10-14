@@ -109,7 +109,7 @@ fn register_actions(cx: &mut App) {
     cx.on_action(|_: &Quit, cx| cx.quit());
     cx.on_action(|_: &About, cx| {
         app::open_main_window(cx);
-        main_window::show_about(cx);
+        brand::show_about(cx);
     });
     cx.on_action(|_: &AddUrl, cx| app::open_add_dialog(AddPrefill::FromClipboard, cx));
     cx.on_action(|_: &ShowOptions, cx| app::open_options(cx));
