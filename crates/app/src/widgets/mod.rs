@@ -420,6 +420,29 @@ pub fn progress_bar(progress: Option<f64>, height: Pixels, color: Hsla, theme: &
         .child(div().h_full().w(gpui::relative(fraction)).rounded(height / 2.).bg(color))
 }
 
+/// [`progress_bar`] that glides from `from` to `to` over `duration` instead of
+/// jumping; `id` must change with every new pair of values to restart the motion.
+pub fn gliding_progress_bar(
+    id: impl Into<ElementId>,
+    from: f32,
+    to: f32,
+    duration: std::time::Duration,
+    height: Pixels,
+    color: Hsla,
+    theme: &Theme,
+) -> impl IntoElement {
+    use gpui::{Animation, AnimationExt};
+    let height = if theme.fluent { height.min(px(6.)) } else { height };
+    let (from, to) = (from.clamp(0., 1.), to.clamp(0., 1.));
+    div().w_full().h(height).rounded(height / 2.).bg(theme.track).overflow_hidden().child(
+        div().h_full().rounded(height / 2.).bg(color).w(gpui::relative(to)).with_animation(
+            id,
+            Animation::new(duration),
+            move |fill, t| fill.w(gpui::relative(from + (to - from) * t)),
+        ),
+    )
+}
+
 /// IDM's segment map: one bar for the file with each segment's received part filled in.
 pub fn segment_bar(segments: Vec<SegmentState>, total: Option<u64>, theme: &Theme) -> impl IntoElement {
     let theme = *theme;

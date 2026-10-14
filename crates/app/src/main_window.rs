@@ -1,12 +1,14 @@
+use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
+use std::rc::Rc;
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::{
     Animation, AnimationExt, AnyElement, App, AppContext, ClipboardItem, Context, Entity, FocusHandle, Focusable,
-    FontWeight, Transformation, radians, svg,
+    FontWeight, Transformation, canvas, point, radians, svg,
     KeyBinding, MouseButton, MouseDownEvent, Pixels, Point, PromptLevel, SharedString, Task,
     UniformListScrollHandle, Window, actions, anchored, deferred, div, prelude::*, px, uniform_list,
 };
@@ -19,7 +21,9 @@ use crate::assets::Icon;
 use crate::file_icons::file_icon_element;
 use crate::format;
 use crate::theme::Theme;
-use crate::widgets::{Button, ToolbarButton, icon, progress_bar, separator, title_bar, truncated};
+use crate::widgets::{
+    Button, ToolbarButton, gliding_progress_bar, icon, progress_bar, separator, title_bar, truncated,
+};
 
 actions!(
     main_window,
@@ -28,6 +32,31 @@ actions!(
 
 const CONTEXT: &str = "MainWindow";
 const ROW_HEIGHT: f32 = 30.;
+/// How often the list asks the engine for news; bars glide across one interval.
+const REFRESH_INTERVAL: Duration = Duration::from_millis(250);
+/// How long the sidebar's accent bar takes to slide to a new selection.
+const INDICATOR_MOTION: Duration = Duration::from_millis(260);
+/// How long a finished download's row stays green, fading.
+const FLASH_MOTION: Duration = Duration::from_millis(1500);
+
+/// The sidebar entry that shows `filter`, as keyed in `sidebar_item`.
+fn filter_key(filter: &Filter) -> &'static str {
+    match filter {
+        Filter::All => "all",
+        Filter::Unfinished => "unfinished",
+        Filter::Finished => "finished",
+        Filter::Queue => "queue",
+        Filter::Category(name) => match name.as_str() {
+            "Compressed" => "cat-compressed",
+            "Documents" => "cat-documents",
+            "Music" => "cat-music",
+            "Programs" => "cat-programs",
+            "Video" => "cat-video",
+            GENERAL => "cat-general",
+            _ => "cat-custom",
+        },
+    }
+}
 /// How long folding or unfolding the categories takes.
 const TREE_MOTION: Duration = Duration::from_millis(220);
 /// Where the category tree's guide line runs: under the chevron that folds the
@@ -153,6 +182,16 @@ pub struct MainWindow {
     tree_toggles: usize,
     /// The categories are folding away; they stay drawn until the animation ends.
     tree_closing: bool,
+    /// Where each sidebar entry's accent bar was last drawn, by key (window coordinates).
+    indicator_slots: Rc<RefCell<HashMap<&'static str, Point<Pixels>>>>,
+    /// Where the accent bar was before the last selection change, to slide from.
+    indicator_from: Option<Point<Pixels>>,
+    indicator_moves: usize,
+    /// Each download's progress at the previous refresh, so its bar glides on.
+    last_progress: HashMap<DownloadId, f32>,
+    refreshes: usize,
+    /// Downloads that just finished, flashing green; the value restarts the flash.
+    flashes: HashMap<DownloadId, usize>,
     queue_running: bool,
     total_speed: u64,
     pub(crate) brand: Entity<Brand>,
@@ -190,6 +229,12 @@ impl MainWindow {
             categories_open: true,
             tree_toggles: 0,
             tree_closing: false,
+            indicator_slots: Rc::default(),
+            indicator_from: None,
+            indicator_moves: 0,
+            last_progress: HashMap::new(),
+            refreshes: 0,
+            flashes: HashMap::new(),
             queue_running: false,
             total_speed: 0,
             _poll: poll,
@@ -199,7 +244,28 @@ impl MainWindow {
     }
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
+        self.last_progress = self
+            .downloads
+            .iter()
+            .filter_map(|d| d.progress().map(|p| (d.id, p as f32)))
+            .collect();
+        let was_running: BTreeSet<DownloadId> = self
+            .downloads
+            .iter()
+            .filter(|d| d.status != DownloadStatus::Completed)
+            .map(|d| d.id)
+            .collect();
+        self.refreshes += 1;
         self.downloads = self.engine.snapshot();
+        let finished: Vec<DownloadId> = self
+            .downloads
+            .iter()
+            .filter(|d| d.status == DownloadStatus::Completed && was_running.contains(&d.id))
+            .map(|d| d.id)
+            .collect();
+        for id in finished {
+            self.flash(id, cx);
+        }
         self.queue_running = self.engine.is_queue_running();
         self.total_speed = self.engine.total_speed();
         let ids: BTreeSet<DownloadId> = self.downloads.iter().map(|d| d.id).collect();
@@ -233,6 +299,10 @@ impl MainWindow {
     }
 
     fn set_filter(&mut self, filter: Filter, cx: &mut Context<Self>) {
+        if filter != self.filter {
+            self.indicator_from = self.indicator_slots.borrow().get(filter_key(&self.filter)).copied();
+            self.indicator_moves += 1;
+        }
         self.filter = filter;
         self.selected.clear();
         self.rebuild_rows();
@@ -539,11 +609,45 @@ impl MainWindow {
             .text_color(theme.text)
             .when(active && !theme.fluent, |this| this.bg(theme.accent_soft))
             // Windows 11: a quiet highlight and a short accent bar, as in Settings.
+            // Records where this entry's accent bar sits, for the bar to slide from.
+            .when(theme.fluent, |this| {
+                let (left, top) = if child { (TREE_LINE_X - TREE_INDENT, 6.) } else { (0., 10.) };
+                let slots = self.indicator_slots.clone();
+                this.child(
+                    canvas(
+                        move |bounds, _, _| {
+                            slots.borrow_mut().insert(key, bounds.origin + point(px(left), px(top)));
+                        },
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+                )
+            })
             .when(active && theme.fluent, |this| {
                 let (left, top) = if child { (TREE_LINE_X - TREE_INDENT, 6.) } else { (0., 10.) };
-                this.bg(theme.hover).child(
-                    div().absolute().left(px(left)).top(px(top)).w(px(3.)).h(px(if child { 16. } else { 12. })).rounded_full().bg(theme.accent),
-                )
+                let bar = div().absolute().left(px(left)).top(px(top)).w(px(3.)).h(px(if child { 16. } else { 12. })).rounded_full().bg(theme.accent);
+                // Windows 11 Settings: the bar slides from the previous selection.
+                let here = self.indicator_slots.borrow().get(key).copied();
+                let slide = match (self.indicator_from, here) {
+                    (Some(from), Some(here)) if crate::platform::animations_enabled() => Some(from - here),
+                    _ => None,
+                };
+                this.bg(theme.hover).child(match slide {
+                    Some(offset) => bar
+                        .with_animation(
+                            ("indicator", self.indicator_moves),
+                            Animation::new(INDICATOR_MOTION).with_easing(gpui::ease_out_quint()),
+                            move |bar, t| {
+                                let rest = 1. - t;
+                                bar.left(px(left) + offset.x * rest).top(px(top) + offset.y * rest)
+                            },
+                        )
+                        .into_any_element(),
+                    None => bar.into_any_element(),
+                })
             })
             .when(!active, |this| this.hover(|s| s.bg(theme.hover)))
             .on_click(cx.listener(move |this, _, _, cx| this.set_filter(filter.clone(), cx)))
@@ -561,12 +665,32 @@ impl MainWindow {
             })
     }
 
+    /// Briefly tints a download's row green as it finishes.
+    fn flash(&mut self, id: DownloadId, cx: &mut Context<Self>) {
+        if !crate::platform::animations_enabled() {
+            return;
+        }
+        let n = self.refreshes;
+        self.flashes.insert(id, n);
+        cx.spawn(async move |this, cx| {
+            gpui::Timer::after(FLASH_MOTION).await;
+            this.update(cx, |this, cx| {
+                if this.flashes.get(&id) == Some(&n) {
+                    this.flashes.remove(&id);
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     /// Folds or unfolds the categories, animated.
     pub(crate) fn toggle_categories(&mut self, cx: &mut Context<Self>) {
         self.tree_toggles += 1;
         if self.categories_open {
             self.categories_open = false;
-            self.tree_closing = true;
+            self.tree_closing = crate::platform::animations_enabled();
             let toggles = self.tree_toggles;
             cx.spawn(async move |this, cx| {
                 gpui::Timer::after(TREE_MOTION).await;
@@ -589,7 +713,7 @@ impl MainWindow {
 
     /// The categories' container, sliding open or shut (and fading) after a toggle.
     fn animate_tree(&self, tree: AnyElement) -> AnyElement {
-        if self.tree_toggles == 0 {
+        if self.tree_toggles == 0 || !crate::platform::animations_enabled() {
             return tree;
         }
         let opening = self.categories_open;
@@ -614,7 +738,7 @@ impl MainWindow {
     fn render_chevron(&self, theme: &Theme) -> AnyElement {
         let glyph = svg().path(Icon::ChevronRight.path()).size(px(10.)).text_color(theme.muted);
         let open = self.categories_open;
-        if self.tree_toggles == 0 {
+        if self.tree_toggles == 0 || !crate::platform::animations_enabled() {
             let angle = if open { std::f32::consts::FRAC_PI_2 } else { 0. };
             return glyph.with_transformation(Transformation::rotate(radians(angle))).into_any_element();
         }
@@ -833,7 +957,22 @@ impl MainWindow {
                     .child(div().w_full().text_color(color).child(truncated(text)))
                     .when(show_bar, |this| {
                         let bar_color = if d.status == DownloadStatus::Downloading { theme.accent } else { theme.faint };
-                        this.child(progress_bar(d.progress(), px(3.), bar_color, theme))
+                        let to = d.progress().unwrap_or(0.) as f32;
+                        let from = self.last_progress.get(&d.id).copied().unwrap_or(to);
+                        if crate::platform::animations_enabled() && (to - from).abs() > 0.0005 {
+                            // Glides over the time until the next refresh.
+                            this.child(gliding_progress_bar(
+                                ("row-bar", (d.id as usize) << 20 | (self.refreshes & 0xfffff)),
+                                from,
+                                to,
+                                REFRESH_INTERVAL,
+                                px(3.),
+                                bar_color,
+                                theme,
+                            ))
+                        } else {
+                            this.child(progress_bar(d.progress(), px(3.), bar_color, theme))
+                        }
                     })
                     .into_any_element()
             }
@@ -869,8 +1008,8 @@ impl MainWindow {
                 } else {
                     theme.bg
                 };
-                Some(
-                    div()
+                let flash = self.flashes.get(&id).copied();
+                let row = div()
                         .id(("row", id as usize))
                         .flex()
                         .items_center()
@@ -901,8 +1040,20 @@ impl MainWindow {
                                 .when(width.is_none(), |this| this.flex_1().min_w(px(180.)))
                                 .child(self.render_cell(column, d, &theme))
                         }))
-                        .into_any_element(),
-                )
+;
+                Some(match flash {
+                    // Just finished: a green wash that fades back to the row's colour.
+                    Some(n) => {
+                        let green = theme.success;
+                        row.with_animation(
+                            ("row-flash", (id as usize) << 20 | (n & 0xfffff)),
+                            Animation::new(FLASH_MOTION).with_easing(gpui::ease_out_quint()),
+                            move |row, t| row.bg(green.opacity(0.28 * (1. - t))),
+                        )
+                        .into_any_element()
+                    }
+                    None => row.into_any_element(),
+                })
             })
             .collect()
     }
