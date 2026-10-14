@@ -86,6 +86,8 @@ pub struct TextInput {
     numeric: bool,
     /// Shows bullets instead of the text (passwords).
     masked: bool,
+    /// Selectable and copyable, but not editable (like IDM's address fields).
+    read_only: bool,
 }
 
 const BULLET: char = '•';
@@ -107,6 +109,7 @@ impl TextInput {
             is_selecting: false,
             numeric: false,
             masked: false,
+            read_only: false,
         }
     }
 
@@ -123,6 +126,11 @@ impl TextInput {
 
     pub fn masked(mut self) -> Self {
         self.masked = true;
+        self
+    }
+
+    pub fn read_only(mut self) -> Self {
+        self.read_only = true;
         self
     }
 
@@ -447,6 +455,9 @@ impl EntityInputHandler for TextInput {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.read_only {
+            return;
+        }
         let range = range_utf16
             .as_ref()
             .map(|range_utf16| self.range_from_utf16(range_utf16))
@@ -469,6 +480,9 @@ impl EntityInputHandler for TextInput {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.read_only {
+            return;
+        }
         let range = range_utf16
             .as_ref()
             .map(|range_utf16| self.range_from_utf16(range_utf16))
@@ -713,7 +727,9 @@ impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(window);
         let focused = self.focus_handle.is_focused(window);
+        let editable_focus = focused && !self.read_only;
         div()
+            .relative()
             .flex()
             .items_center()
             .key_context(CONTEXT)
@@ -745,18 +761,31 @@ impl Render for TextInput {
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .w_full()
-            .h(px(28.))
-            .px(px(8.))
-            .rounded(px(6.))
+            .h(px(theme.control_height))
+            .px(px(if theme.fluent { 10. } else { 8. }))
+            .rounded(px(theme.radius))
             .border_1()
-            .border_color(if focused { theme.accent } else { theme.border_strong })
-            .when(focused, |this| this.shadow_xs())
-            .bg(theme.bg)
             .text_color(theme.text)
             .text_size(px(13.))
             .line_height(px(18.))
             .overflow_hidden()
+            .map(|this| {
+                if !theme.fluent {
+                    this.border_color(if focused { theme.accent } else { theme.border_strong })
+                        .when(focused, |this| this.shadow_xs())
+                        .bg(theme.bg)
+                } else if self.read_only {
+                    this.border_color(theme.border).bg(theme.input_readonly)
+                } else {
+                    // Fluent text box: quiet border, accent underline while focused.
+                    this.border_color(if editable_focus { theme.border } else { theme.border_strong })
+                        .bg(if editable_focus { theme.input_focus } else { theme.input })
+                }
+            })
             .child(TextElement { input: cx.entity() })
+            .when(theme.fluent && editable_focus, |this| {
+                this.child(div().absolute().left_0().right_0().bottom_0().h(px(2.)).bg(theme.accent))
+            })
     }
 }
 

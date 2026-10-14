@@ -1,126 +1,244 @@
-#![allow(unexpected_cfgs)] // emitted by the objc macros
+#![cfg_attr(target_os = "macos", allow(unexpected_cfgs))] // emitted by the objc macros
 
 //! Development aid (feature `dev-snapshots`): when `$TACHYON_SNAPSHOT_DIR/trigger`
 //! appears, every visible Tachyon window is saved there as a PNG. An app may capture
-//! its own windows without the Screen Recording permission, which makes this usable
-//! from scripts and CI.
+//! its own windows without the Screen Recording permission on macOS, and on Windows
+//! `PrintWindow` captures only Tachyon's windows, never what is behind them, which
+//! makes this usable from scripts and CI.
 
-use std::ffi::{CString, c_void};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use gpui::App;
-use objc::runtime::Object;
-use objc::{class, msg_send, sel, sel_impl};
 
-type CFTypeRef = *const c_void;
+#[cfg(target_os = "macos")]
+use mac::capture_all;
+#[cfg(windows)]
+use win::capture_all;
 
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct CGRect {
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-}
+#[cfg(target_os = "macos")]
+mod mac {
+    use std::ffi::{CString, c_void};
+    use std::path::Path;
 
-#[link(name = "CoreFoundation", kind = "framework")]
-unsafe extern "C" {
-    fn CFRelease(cf: CFTypeRef);
-    fn CFURLCreateFromFileSystemRepresentation(
-        allocator: CFTypeRef,
-        buffer: *const u8,
-        len: isize,
-        is_directory: bool,
-    ) -> CFTypeRef;
-    fn CFStringCreateWithCString(allocator: CFTypeRef, c_str: *const i8, encoding: u32) -> CFTypeRef;
-}
+    use objc::runtime::Object;
+    use objc::{class, msg_send, sel, sel_impl};
 
-#[link(name = "ImageIO", kind = "framework")]
-unsafe extern "C" {
-    fn CGImageDestinationCreateWithURL(url: CFTypeRef, kind: CFTypeRef, count: usize, options: CFTypeRef) -> CFTypeRef;
-    fn CGImageDestinationAddImage(dest: CFTypeRef, image: CFTypeRef, properties: CFTypeRef);
-    fn CGImageDestinationFinalize(dest: CFTypeRef) -> bool;
-}
+    type CFTypeRef = *const c_void;
 
-#[link(name = "CoreGraphics", kind = "framework")]
-unsafe extern "C" {}
-
-unsafe extern "C" {
-    fn dlsym(handle: *mut c_void, symbol: *const i8) -> *mut c_void;
-}
-
-type CaptureFn = unsafe extern "C" fn(CGRect, u32, u32, u32) -> CFTypeRef;
-
-const RTLD_DEFAULT: *mut c_void = -2isize as *mut c_void;
-const INCLUDING_WINDOW: u32 = 1 << 3;
-const BOUNDS_IGNORE_FRAMING: u32 = 1;
-const UTF8: u32 = 0x0800_0100;
-
-fn capture_window(number: u32, path: &Path) -> bool {
-    unsafe {
-        // Looked up at runtime: the SDK hides this deprecated symbol.
-        let name = CString::new("CGWindowListCreateImage").unwrap();
-        let sym = dlsym(RTLD_DEFAULT, name.as_ptr());
-        if sym.is_null() {
-            return false;
-        }
-        let capture: CaptureFn = std::mem::transmute(sym);
-        let null = CGRect {
-            x: f64::INFINITY,
-            y: f64::INFINITY,
-            w: 0.,
-            h: 0.,
-        };
-        let image = capture(null, INCLUDING_WINDOW, number, BOUNDS_IGNORE_FRAMING);
-        if image.is_null() {
-            return false;
-        }
-        let bytes = path.as_os_str().as_encoded_bytes();
-        let url = CFURLCreateFromFileSystemRepresentation(std::ptr::null(), bytes.as_ptr(), bytes.len() as isize, false);
-        let png = CString::new("public.png").unwrap();
-        let kind = CFStringCreateWithCString(std::ptr::null(), png.as_ptr(), UTF8);
-        let dest = CGImageDestinationCreateWithURL(url, kind, 1, std::ptr::null());
-        let ok = !dest.is_null() && {
-            CGImageDestinationAddImage(dest, image, std::ptr::null());
-            CGImageDestinationFinalize(dest)
-        };
-        for obj in [dest, kind, url, image] {
-            if !obj.is_null() {
-                CFRelease(obj);
-            }
-        }
-        ok
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct CGRect {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
     }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        fn CFRelease(cf: CFTypeRef);
+        fn CFURLCreateFromFileSystemRepresentation(
+            allocator: CFTypeRef,
+            buffer: *const u8,
+            len: isize,
+            is_directory: bool,
+        ) -> CFTypeRef;
+        fn CFStringCreateWithCString(allocator: CFTypeRef, c_str: *const i8, encoding: u32) -> CFTypeRef;
+    }
+
+    #[link(name = "ImageIO", kind = "framework")]
+    unsafe extern "C" {
+        fn CGImageDestinationCreateWithURL(url: CFTypeRef, kind: CFTypeRef, count: usize, options: CFTypeRef) -> CFTypeRef;
+        fn CGImageDestinationAddImage(dest: CFTypeRef, image: CFTypeRef, properties: CFTypeRef);
+        fn CGImageDestinationFinalize(dest: CFTypeRef) -> bool;
+    }
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {}
+
+    unsafe extern "C" {
+        fn dlsym(handle: *mut c_void, symbol: *const i8) -> *mut c_void;
+    }
+
+    type CaptureFn = unsafe extern "C" fn(CGRect, u32, u32, u32) -> CFTypeRef;
+
+    const RTLD_DEFAULT: *mut c_void = -2isize as *mut c_void;
+    const INCLUDING_WINDOW: u32 = 1 << 3;
+    const BOUNDS_IGNORE_FRAMING: u32 = 1;
+    const UTF8: u32 = 0x0800_0100;
+
+    fn capture_window(number: u32, path: &Path) -> bool {
+        unsafe {
+            // Looked up at runtime: the SDK hides this deprecated symbol.
+            let name = CString::new("CGWindowListCreateImage").unwrap();
+            let sym = dlsym(RTLD_DEFAULT, name.as_ptr());
+            if sym.is_null() {
+                return false;
+            }
+            let capture: CaptureFn = std::mem::transmute(sym);
+            let null = CGRect {
+                x: f64::INFINITY,
+                y: f64::INFINITY,
+                w: 0.,
+                h: 0.,
+            };
+            let image = capture(null, INCLUDING_WINDOW, number, BOUNDS_IGNORE_FRAMING);
+            if image.is_null() {
+                return false;
+            }
+            let bytes = path.as_os_str().as_encoded_bytes();
+            let url = CFURLCreateFromFileSystemRepresentation(std::ptr::null(), bytes.as_ptr(), bytes.len() as isize, false);
+            let png = CString::new("public.png").unwrap();
+            let kind = CFStringCreateWithCString(std::ptr::null(), png.as_ptr(), UTF8);
+            let dest = CGImageDestinationCreateWithURL(url, kind, 1, std::ptr::null());
+            let ok = !dest.is_null() && {
+                CGImageDestinationAddImage(dest, image, std::ptr::null());
+                CGImageDestinationFinalize(dest)
+            };
+            for obj in [dest, kind, url, image] {
+                if !obj.is_null() {
+                    CFRelease(obj);
+                }
+            }
+            ok
+        }
+    }
+
+    /// Saves every visible window as `<dir>/<n>-<title>.png`.
+    pub fn capture_all(dir: &Path) {
+        unsafe {
+            let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+            let windows: *mut Object = msg_send![app, windows];
+            let count: usize = msg_send![windows, count];
+            for i in 0..count {
+                let window: *mut Object = msg_send![windows, objectAtIndex: i];
+                let visible: bool = msg_send![window, isVisible];
+                if !visible {
+                    continue;
+                }
+                let number: isize = msg_send![window, windowNumber];
+                let title: *mut Object = msg_send![window, title];
+                let utf8: *const i8 = msg_send![title, UTF8String];
+                let title = if utf8.is_null() {
+                    String::new()
+                } else {
+                    std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned()
+                };
+                let safe: String = title
+                    .chars()
+                    .map(|c| if c.is_alphanumeric() { c } else { '-' })
+                    .collect();
+                let path = dir.join(format!("{number}-{safe}.png"));
+                if !capture_window(number as u32, &path) {
+                    log::warn!("snapshot of window {number} failed");
+                }
+            }
+        }
+    }
+
 }
 
-/// Saves every visible window as `<dir>/<n>-<title>.png`.
-fn capture_all(dir: &Path) {
-    unsafe {
-        let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
-        let windows: *mut Object = msg_send![app, windows];
-        let count: usize = msg_send![windows, count];
-        for i in 0..count {
-            let window: *mut Object = msg_send![windows, objectAtIndex: i];
-            let visible: bool = msg_send![window, isVisible];
-            if !visible {
-                continue;
+#[cfg(windows)]
+mod win {
+    use std::path::Path;
+
+    use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
+    use windows_sys::Win32::Graphics::Gdi::{
+        BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleBitmap, CreateCompatibleDC, DIB_RGB_COLORS,
+        DeleteDC, DeleteObject, GetDC, GetDIBits, ReleaseDC, SelectObject,
+    };
+    use windows_sys::Win32::Storage::Xps::PrintWindow;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+        PW_RENDERFULLCONTENT,
+    };
+
+    unsafe extern "system" fn collect(hwnd: HWND, list: LPARAM) -> BOOL {
+        let mut pid = 0;
+        // SAFETY: `list` is the `Vec` passed to `EnumWindows` below.
+        unsafe {
+            GetWindowThreadProcessId(hwnd, &mut pid);
+            if pid == std::process::id() && IsWindowVisible(hwnd) != 0 {
+                (*(list as *mut Vec<HWND>)).push(hwnd);
             }
-            let number: isize = msg_send![window, windowNumber];
-            let title: *mut Object = msg_send![window, title];
-            let utf8: *const i8 = msg_send![title, UTF8String];
-            let title = if utf8.is_null() {
-                String::new()
-            } else {
-                std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned()
+        }
+        1
+    }
+
+    fn title(hwnd: HWND) -> String {
+        let mut buf = [0u16; 256];
+        // SAFETY: the length passed is the buffer's.
+        let len = unsafe { GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
+        String::from_utf16_lossy(&buf[..len.max(0) as usize])
+    }
+
+    /// Renders the window, including its DirectX content, into BGRA pixels.
+    fn capture(hwnd: HWND) -> Option<(u32, u32, Vec<u8>)> {
+        // SAFETY: plain GDI calls; every object created is released before returning.
+        unsafe {
+            let mut rect: RECT = std::mem::zeroed();
+            GetWindowRect(hwnd, &mut rect);
+            let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
+            if w <= 0 || h <= 0 {
+                return None;
+            }
+            let screen = GetDC(std::ptr::null_mut());
+            let dc = CreateCompatibleDC(screen);
+            let bitmap = CreateCompatibleBitmap(screen, w, h);
+            let old = SelectObject(dc, bitmap);
+            let printed = PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT) != 0;
+            SelectObject(dc, old);
+            let mut info: BITMAPINFO = std::mem::zeroed();
+            info.bmiHeader = BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: w,
+                biHeight: -h, // top-down rows
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB,
+                ..std::mem::zeroed()
             };
-            let safe: String = title
+            let mut pixels = vec![0u8; (w * h * 4) as usize];
+            let rows = GetDIBits(dc, bitmap, 0, h as u32, pixels.as_mut_ptr().cast(), &mut info, DIB_RGB_COLORS);
+            DeleteObject(bitmap);
+            DeleteDC(dc);
+            ReleaseDC(std::ptr::null_mut(), screen);
+            (printed && rows == h).then_some((w as u32, h as u32, pixels))
+        }
+    }
+
+    fn save_png(path: &Path, width: u32, height: u32, mut bgra: Vec<u8>) -> std::io::Result<()> {
+        for px in bgra.chunks_exact_mut(4) {
+            px.swap(0, 2);
+            px[3] = 255;
+        }
+        let file = std::io::BufWriter::new(std::fs::File::create(path)?);
+        let mut encoder = png::Encoder::new(file, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.write_header()?.write_image_data(&bgra)?;
+        Ok(())
+    }
+
+    /// Saves every visible window of this process as `<dir>/<hwnd>-<title>.png`.
+    pub fn capture_all(dir: &Path) {
+        let mut windows: Vec<HWND> = Vec::new();
+        // SAFETY: `collect` only pushes into `windows`, which outlives the call.
+        unsafe { EnumWindows(Some(collect), &raw mut windows as LPARAM) };
+        for hwnd in windows {
+            let safe: String = title(hwnd)
                 .chars()
                 .map(|c| if c.is_alphanumeric() { c } else { '-' })
                 .collect();
-            let path = dir.join(format!("{number}-{safe}.png"));
-            if !capture_window(number as u32, &path) {
-                log::warn!("snapshot of window {number} failed");
+            let path = dir.join(format!("{}-{safe}.png", hwnd as usize));
+            match capture(hwnd) {
+                Some((w, h, pixels)) => {
+                    if let Err(e) = save_png(&path, w, h, pixels) {
+                        log::warn!("could not save {}: {e}", path.display());
+                    }
+                }
+                None => log::warn!("snapshot of window {hwnd:?} failed"),
             }
         }
     }
@@ -163,6 +281,21 @@ fn run_command(line: &str, cx: &mut App) {
             for w in windows.iter().filter_map(|w| w.downcast::<AddDialog>()) {
                 w.update(cx, |d, window, cx| d.add(name == "add-start", window, cx)).ok();
             }
+        }
+        "add-category-menu" => {
+            for w in windows.iter().filter_map(|w| w.downcast::<AddDialog>()) {
+                w.update(cx, |d, _, cx| d.dev_toggle_category_menu(cx)).ok();
+            }
+        }
+        "style" => {
+            let style = match arg.trim() {
+                "mica" => tachyon_engine::WindowStyle::Mica,
+                "liquid" => tachyon_engine::WindowStyle::LiquidGlass,
+                "solid" => tachyon_engine::WindowStyle::Solid,
+                _ => tachyon_engine::WindowStyle::Classic,
+            };
+            crate::theme::set_style(style);
+            cx.refresh_windows();
         }
         "progress-details" => {
             for w in windows.iter().filter_map(|w| w.downcast::<ProgressWindow>()) {

@@ -34,6 +34,7 @@ pub struct Button {
     kind: ButtonKind,
     disabled: bool,
     compact: bool,
+    fill: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -46,8 +47,15 @@ impl Button {
             kind: ButtonKind::Secondary,
             disabled: false,
             compact: false,
+            fill: false,
             on_click: None,
         }
+    }
+
+    /// Shares the row's width equally with other filling buttons, as in Windows dialogs.
+    pub fn fill(mut self) -> Self {
+        self.fill = true;
+        self
     }
 
     pub fn primary(mut self) -> Self {
@@ -86,28 +94,35 @@ impl RenderOnce for Button {
         let theme = Theme::of(window);
         let (bg, hover, fg, border) = match self.kind {
             ButtonKind::Primary => (theme.accent, theme.accent_hover, theme.on_accent, theme.accent),
+            ButtonKind::Secondary if theme.fluent => (theme.button, theme.button_hover, theme.text, theme.border),
             ButtonKind::Secondary => (theme.button, theme.button_hover, theme.text, theme.border_strong),
             ButtonKind::Ghost => (gpui::transparent_black(), theme.hover, theme.text, gpui::transparent_black()),
         };
         let disabled = self.disabled;
         let handler = self.on_click.clone();
+        let height = if self.compact { theme.control_height - 6. } else { theme.control_height };
         div()
             .id(self.id)
             .flex()
-            .flex_none()
+            .when(self.fill, |this| this.flex_1().min_w(px(96.)))
+            .when(!self.fill, |this| this.flex_none())
             .items_center()
             .justify_center()
             .gap(px(6.))
-            .h(px(if self.compact { 24. } else { 28. }))
+            .h(px(height))
             .px(px(if self.compact { 8. } else { 14. }))
-            .rounded(px(6.))
+            .rounded(px(theme.radius))
             .border_1()
             .border_color(border)
             .bg(bg)
             .text_color(fg)
             .text_size(px(13.))
-            .font_weight(if self.kind == ButtonKind::Primary { FontWeight::MEDIUM } else { FontWeight::NORMAL })
-            .when(self.kind != ButtonKind::Ghost, |this| this.shadow_xs())
+            .font_weight(if self.kind == ButtonKind::Primary && !theme.fluent {
+                FontWeight::MEDIUM
+            } else {
+                FontWeight::NORMAL
+            })
+            .when(self.kind != ButtonKind::Ghost && !theme.fluent, |this| this.shadow_xs())
             .when(disabled, |this| this.opacity(0.45))
             .when(!disabled, |this| {
                 this.cursor_pointer()
@@ -185,7 +200,7 @@ impl RenderOnce for ToolbarButton {
             .min_w(px(62.))
             .h(px(54.))
             .px(px(6.))
-            .rounded(px(8.))
+            .rounded(px(theme.radius_large))
             .text_size(px(11.))
             .text_color(if disabled { theme.faint } else { theme.text })
             .when(!disabled, |this| {
@@ -250,10 +265,10 @@ impl RenderOnce for Checkbox {
                     .items_center()
                     .justify_center()
                     .size(px(16.))
-                    .rounded(px(4.))
+                    .rounded(px(theme.radius.min(4.)))
                     .border_1()
                     .border_color(if checked { theme.accent } else { theme.border_strong })
-                    .bg(if checked { theme.accent } else { theme.bg })
+                    .bg(if checked { theme.accent } else { theme.input })
                     .when(checked, |this| this.child(icon(Icon::Check, px(12.), theme.on_accent))),
             )
             .child(self.label)
@@ -293,7 +308,7 @@ pub fn radio_group<T: Copy + PartialEq + 'static>(
                         .rounded_full()
                         .border_1()
                         .border_color(if active { theme.accent } else { theme.border_strong })
-                        .bg(theme.bg)
+                        .bg(theme.input)
                         .when(active, |this| this.child(div().size(px(8.)).rounded_full().bg(theme.accent))),
                 )
                 .child(label)
@@ -311,6 +326,37 @@ pub fn tabs(
 ) -> impl IntoElement {
     let on_select = Rc::new(on_select);
     let theme = *theme;
+    if theme.fluent {
+        // Windows 11 selector bar: plain labels, a short accent bar under the selected one.
+        return div()
+            .flex()
+            .flex_none()
+            .gap(px(4.))
+            .border_b_1()
+            .border_color(theme.border)
+            .children(labels.iter().enumerate().map(|(ix, label)| {
+                let on_select = on_select.clone();
+                let active = ix == selected;
+                div()
+                    .id((id, ix))
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap(px(5.))
+                    .px(px(10.))
+                    .pt(px(6.))
+                    .rounded_t(px(theme.radius))
+                    .cursor_pointer()
+                    .text_size(px(13.))
+                    .text_color(if active { theme.text } else { theme.muted })
+                    .when(active, |this| this.font_weight(FontWeight::SEMIBOLD))
+                    .when(!active, |this| this.hover(|s| s.bg(theme.hover).text_color(theme.text)))
+                    .on_click(move |_, window, cx| on_select(&ix, window, cx))
+                    .child(*label)
+                    .child(div().h(px(3.)).w(px(18.)).rounded_full().when(active, |this| this.bg(theme.accent)))
+            }))
+            .into_any_element();
+    }
     div()
         .flex()
         .flex_none()
@@ -337,9 +383,12 @@ pub fn tabs(
                 .on_click(move |_, window, cx| on_select(&ix, window, cx))
                 .child(*label)
         }))
+        .into_any_element()
 }
 
 pub fn progress_bar(progress: Option<f64>, height: Pixels, color: Hsla, theme: &Theme) -> impl IntoElement {
+    // Fluent progress bars are thin.
+    let height = if theme.fluent { height.min(px(6.)) } else { height };
     let fraction = progress.unwrap_or(0.0).clamp(0.0, 1.0) as f32;
     div()
         .w_full()
@@ -386,8 +435,150 @@ pub fn segment_bar(segments: Vec<SegmentState>, total: Option<u64>, theme: &Them
     )
     .w_full()
     .h(px(14.))
-    .rounded(px(3.))
+    .rounded(px(theme.radius.min(4.)))
     .overflow_hidden()
+}
+
+/// Windows-style labelled field: a caption above its control, like IDM's dialogs.
+pub fn field(label: impl Into<SharedString>, control: impl IntoElement, theme: &Theme) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(4.))
+        .child(div().text_size(px(12.)).text_color(theme.muted).child(label.into()))
+        .child(control)
+}
+
+/// IDM-style row: a right-aligned caption to the left of its control, so a dialog
+/// stays compact while every value keeps its own box.
+pub fn field_row_inline(
+    label: impl Into<SharedString>,
+    label_width: f32,
+    control: impl IntoElement,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(10.))
+        .child(
+            div()
+                .w(px(label_width))
+                .flex_none()
+                .flex()
+                .justify_end()
+                .text_size(px(13.))
+                .text_color(theme.muted)
+                .child(label.into()),
+        )
+        .child(div().flex_1().min_w_0().child(control))
+}
+
+/// Read-only value in a box, for values too short to need selecting.
+pub fn value_box(value: impl Into<SharedString>, theme: &Theme) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .h(px(theme.control_height))
+        .px(px(10.))
+        .rounded(px(theme.radius))
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.input_readonly)
+        .text_size(px(13.))
+        .child(truncated(value.into()))
+}
+
+/// A translucent card that groups related content. Glass styles get a light top edge.
+pub fn card(theme: &Theme) -> gpui::Div {
+    div()
+        .rounded(px(theme.radius_large))
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.layer)
+        .when(theme.highlight.a > 0., |this| this.border_color(theme.highlight))
+}
+
+/// Background for popups (menus, tooltips): opaque enough to read over anything.
+pub fn popup_bg(theme: &Theme) -> Hsla {
+    if !theme.fluent {
+        theme.chrome
+    } else if theme.dark {
+        gpui::rgb(0x2c2c2c).into()
+    } else {
+        gpui::rgb(0xf9f9f9).into()
+    }
+}
+
+/// Closed state of a drop-down list: the current value and a chevron. The owner
+/// opens a [`menu_panel`] below it on click.
+pub fn dropdown_trigger(
+    id: impl Into<ElementId>,
+    leading: Option<Icon>,
+    label: impl Into<SharedString>,
+    open: bool,
+    theme: &Theme,
+) -> gpui::Stateful<gpui::Div> {
+    let theme = *theme;
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .h(px(theme.control_height))
+        .px(px(10.))
+        .rounded(px(theme.radius))
+        .border_1()
+        .border_color(if open { theme.accent } else { theme.border_strong })
+        .bg(theme.input)
+        .cursor_pointer()
+        .hover(move |s| s.bg(theme.button_hover))
+        .text_size(px(13.))
+        .when_some(leading, |this, i| this.child(icon(i, px(14.), theme.muted)))
+        .child(div().flex_1().min_w_0().child(truncated(label.into())))
+        .child(icon(if open { Icon::ChevronUp } else { Icon::ChevronDown }, px(12.), theme.muted))
+}
+
+/// Floating list for drop-downs and context menus.
+pub fn menu_panel(theme: &Theme) -> gpui::Div {
+    div()
+        .flex()
+        .flex_col()
+        .p(px(4.))
+        .rounded(px(theme.radius_large))
+        .border_1()
+        .border_color(theme.border_strong)
+        .bg(popup_bg(theme))
+        .shadow_lg()
+}
+
+/// One row in a [`menu_panel`]; the selected row gets a short accent bar, as in Windows 11.
+pub fn menu_item(
+    id: impl Into<ElementId>,
+    leading: Option<Icon>,
+    label: impl Into<SharedString>,
+    selected: bool,
+    theme: &Theme,
+) -> gpui::Stateful<gpui::Div> {
+    let theme = *theme;
+    div()
+        .id(id)
+        .relative()
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .h(px(30.))
+        .px(px(10.))
+        .rounded(px(theme.radius))
+        .cursor_pointer()
+        .text_size(px(13.))
+        .when(selected, |this| this.bg(theme.hover))
+        .hover(move |s| s.bg(theme.hover))
+        .when(selected, |this| {
+            this.child(div().absolute().left_0().top(px(9.)).w(px(3.)).h(px(12.)).rounded_full().bg(theme.accent))
+        })
+        .when_some(leading, |this, i| this.child(icon(i, px(14.), theme.muted)))
+        .child(label.into())
 }
 
 /// "Label:  value" row used by the progress and properties dialogs.
@@ -438,8 +629,8 @@ impl Render for Tooltip {
             div()
                 .px(px(8.))
                 .py(px(4.))
-                .rounded(px(6.))
-                .bg(theme.chrome)
+                .rounded(px(theme.radius))
+                .bg(popup_bg(&theme))
                 .border_1()
                 .border_color(theme.border)
                 .shadow_md()
@@ -484,11 +675,11 @@ pub fn stepper(
         .flex()
         .flex_none()
         .items_center()
-        .h(px(28.))
-        .rounded(px(6.))
+        .h(px(theme.control_height))
+        .rounded(px(theme.radius))
         .border_1()
         .border_color(theme.border_strong)
-        .bg(theme.bg)
+        .bg(theme.input)
         .overflow_hidden()
         .child(step(-1, "−"))
         .child(

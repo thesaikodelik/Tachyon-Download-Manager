@@ -35,6 +35,7 @@ pub fn engine(cx: &App) -> Arc<Engine> {
 }
 
 pub fn init(engine: Arc<Engine>, cx: &mut App) {
+    crate::theme::set_style(engine.settings().window_style);
     let last_clipboard = cx.read_from_clipboard().and_then(|c| c.text());
     cx.set_global(AppState {
         engine,
@@ -127,7 +128,8 @@ pub fn dialog_options(title: &str, bounds: Bounds<Pixels>) -> WindowOptions {
         kind: WindowKind::Normal,
         is_resizable: false,
         is_minimizable: true,
-        window_min_size: Some(bounds.size),
+        // Dialogs resize themselves between steps, so only guard against absurd sizes.
+        window_min_size: Some(size(px(240.), px(120.))),
         ..Default::default()
     }
 }
@@ -160,7 +162,9 @@ pub fn open_main_window(cx: &mut App) {
 }
 
 pub fn open_add_dialog(prefill: AddPrefill, cx: &mut App) {
-    let bounds = centered(size(px(560.), px(400.)), cx);
+    // Opens at the size of the first step so it stays centred; later steps resize it.
+    let fluent = crate::theme::style() != tachyon_engine::WindowStyle::Classic;
+    let bounds = centered(if fluent { size(px(580.), px(136.)) } else { size(px(560.), px(400.)) }, cx);
     cx.open_window(dialog_options("Add Download", bounds), |window, cx| {
         cx.new(|cx| AddDialog::new(prefill, window, cx))
     })

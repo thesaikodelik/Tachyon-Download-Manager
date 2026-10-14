@@ -11,6 +11,7 @@ mod complete_dialog;
 mod format;
 mod main_window;
 mod options_window;
+mod platform;
 mod post_action;
 mod progress_window;
 mod scheduler_window;

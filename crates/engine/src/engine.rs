@@ -161,6 +161,17 @@ impl Engine {
         folder_for(category, &self.inner.settings.read())
     }
 
+    /// Makes `folder` the default for `category` (IDM's "Remember this path").
+    /// General files go to the main download folder.
+    pub fn remember_folder(&self, category: &str, folder: PathBuf) -> Result<(), EngineError> {
+        let mut settings = self.settings();
+        match settings.categories.iter_mut().find(|c| c.name == category) {
+            Some(def) => def.folder = Some(folder),
+            None => settings.download_dir = folder,
+        }
+        self.update_settings(settings)
+    }
+
     pub fn add(&self, request: AddRequest) -> Result<DownloadId, EngineError> {
         self.inner.add(request)
     }

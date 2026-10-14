@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use gpui::{
     AnyElement, AppContext, Context, Entity, Focusable, FontWeight, PathPromptOptions, SharedString,
-    Subscription, Window, div, prelude::*, px, size,
+    Subscription, Window, anchored, deferred, div, prelude::*, px, size,
 };
 use tachyon_engine::{
-    AddRequest, Credentials, Engine, GENERAL, ProbeInfo, RequestSpec, derive_file_name,
+    AddRequest, Credentials, Engine, GENERAL, ProbeInfo, RequestSpec, derive_file_name, extension_of,
 };
 
 use crate::app;
@@ -15,7 +15,12 @@ use crate::assets::Icon;
 use crate::format::{self, display_path, expand_home};
 use crate::theme::Theme;
 use crate::widgets::text_input::{InputEvent, TextInput};
-use crate::widgets::{Button, Checkbox, icon, truncated};
+use crate::widgets::{
+    Button, Checkbox, card, dropdown_trigger, field_row_inline, icon, menu_item, menu_panel, truncated,
+};
+
+/// Width of the captions to the left of the fields on the Windows 11 layout.
+const LABEL_WIDTH: f32 = 74.;
 
 pub enum AddPrefill {
     /// Use the clipboard if it holds a link.
@@ -36,6 +41,8 @@ pub struct AddDialog {
     engine: Arc<Engine>,
     stage: Stage,
     url: Entity<TextInput>,
+    /// The address on the info page: selectable and copyable, not editable.
+    url_display: Entity<TextInput>,
     use_auth: bool,
     username: Entity<TextInput>,
     password: Entity<TextInput>,
@@ -44,7 +51,10 @@ pub struct AddDialog {
     description: Entity<TextInput>,
     category: String,
     category_chosen: bool,
+    category_menu: bool,
     folder_chosen: bool,
+    /// IDM's "Remember this path": make the chosen folder the category's default.
+    remember_folder: bool,
     /// Headers (referrer, cookies…) that came with a captured link.
     base_request: RequestSpec,
     captured_name: Option<String>,
@@ -82,6 +92,7 @@ impl AddDialog {
         let captured = !base_request.url.is_empty();
 
         let url = cx.new(|cx| TextInput::new(cx, "https://example.com/file.zip").with_text(initial_url));
+        let url_display = cx.new(|cx| TextInput::new(cx, "").read_only());
         let username = cx.new(|cx| TextInput::new(cx, "User name"));
         let password = cx.new(|cx| TextInput::new(cx, "Password").masked());
         let file_name = cx.new(|cx| TextInput::new(cx, "File name"));
@@ -120,6 +131,7 @@ impl AddDialog {
             engine,
             stage: Stage::EnterUrl,
             url,
+            url_display,
             use_auth: false,
             username,
             password,
@@ -128,7 +140,9 @@ impl AddDialog {
             description,
             category: GENERAL.to_string(),
             category_chosen: false,
+            category_menu: false,
             folder_chosen: false,
+            remember_folder: false,
             base_request,
             captured_name,
             probe: None,
@@ -148,12 +162,13 @@ impl AddDialog {
     }
 
     fn resize(&self, window: &mut Window) {
+        let fluent = Theme::of(window).fluent;
         let height = match self.stage {
-            Stage::EnterUrl | Stage::Probing if self.use_auth => 330.,
-            Stage::EnterUrl | Stage::Probing => 230.,
-            Stage::Info => 450.,
+            Stage::EnterUrl | Stage::Probing if self.use_auth => if fluent { 208. } else { 330. },
+            Stage::EnterUrl | Stage::Probing => if fluent { 136. } else { 230. },
+            Stage::Info => if fluent { 280. } else { 450. },
         };
-        window.resize(size(px(560.), px(height)));
+        window.resize(size(px(if fluent { 580. } else { 560. }), px(height)));
     }
 
     fn request_spec(&self, cx: &Context<Self>) -> RequestSpec {
@@ -205,6 +220,8 @@ impl AddDialog {
             }
         };
         let name = self.captured_name.clone().unwrap_or(name);
+        self.url_display.update(cx, |input, cx| input.set_text(spec.url.clone(), cx));
+        window.set_window_title("Download File Info");
         let (category, folder) = self.engine.default_target(&name);
         self.category = category;
         self.file_name.update(cx, |input, cx| input.set_text(name, cx));
@@ -237,6 +254,7 @@ impl AddDialog {
     fn choose_category(&mut self, category: String, cx: &mut Context<Self>) {
         self.category = category.clone();
         self.category_chosen = true;
+        self.category_menu = false;
         if !self.folder_chosen {
             let folder = self.engine.folder_for_category(&category);
             self.folder.update(cx, |input, cx| input.set_text(display_path(&folder), cx));
@@ -267,6 +285,12 @@ impl AddDialog {
         .detach();
     }
 
+    #[cfg(feature = "dev-snapshots")]
+    pub(crate) fn dev_toggle_category_menu(&mut self, cx: &mut Context<Self>) {
+        self.category_menu = !self.category_menu;
+        cx.notify();
+    }
+
     pub(crate) fn add(&mut self, start: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.stage != Stage::Info {
             return;
@@ -278,6 +302,11 @@ impl AddDialog {
             return;
         }
         let folder = self.folder.read(cx).text();
+        if self.remember_folder
+            && let Err(e) = self.engine.remember_folder(&self.category, expand_home(folder.trim()))
+        {
+            log::warn!("could not remember the folder: {e}");
+        }
         let request = AddRequest {
             request: self.request_spec(cx),
             file_name: Some(name),
@@ -450,11 +479,286 @@ impl AddDialog {
             .child(Self::labeled("Description", self.description.clone(), theme))
             .into_any_element()
     }
+
+    fn render_enter_url_fluent(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(field_row_inline("Address", LABEL_WIDTH, self.url.clone(), theme))
+            .child(
+                div().pl(px(LABEL_WIDTH + 10.)).child(
+                    Checkbox::new("use-auth", "Use authorization", self.use_auth).on_toggle(cx.listener(
+                        |this, checked: &bool, window, cx| {
+                            this.use_auth = *checked;
+                            this.resize(window);
+                            cx.notify();
+                        },
+                    )),
+                ),
+            )
+            .when(self.use_auth, |this| {
+                this.child(field_row_inline("User name", LABEL_WIDTH, self.username.clone(), theme))
+                    .child(field_row_inline("Password", LABEL_WIDTH, self.password.clone(), theme))
+            })
+            .into_any_element()
+    }
+
+    /// Category drop-down with its menu, which opens below the trigger.
+    fn render_category_picker(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let settings = self.engine.settings();
+        let mut categories: Vec<String> = settings.categories.iter().map(|c| c.name.clone()).collect();
+        categories.push(GENERAL.to_string());
+        let theme_copy = *theme;
+        div()
+            .flex()
+            .flex_col()
+            .child(
+                dropdown_trigger(
+                    "category",
+                    Some(Icon::for_category(&self.category)),
+                    self.category.clone(),
+                    self.category_menu,
+                    theme,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.category_menu = !this.category_menu;
+                    cx.notify();
+                })),
+            )
+            .when(self.category_menu, |this| {
+                this.child(
+                    deferred(
+                        anchored().snap_to_window_with_margin(px(8.)).child(
+                            menu_panel(&theme_copy)
+                                .id("category-menu")
+                                .mt(px(4.))
+                                .w(px(250.))
+                                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                                    this.category_menu = false;
+                                    cx.notify();
+                                }))
+                                .children(categories.into_iter().map(|c| {
+                                    let selected = c == self.category;
+                                    menu_item(
+                                        SharedString::from(format!("cat-{c}")),
+                                        Some(Icon::for_category(&c)),
+                                        c.clone(),
+                                        selected,
+                                        &theme_copy,
+                                    )
+                                    .on_click(cx.listener(move |this, _, _, cx| this.choose_category(c.clone(), cx)))
+                                })),
+                        ),
+                    )
+                    .with_priority(1),
+                )
+            })
+    }
+
+    /// The file at a glance, like the type icon and size IDM shows beside the form.
+    fn render_file_card(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let name = self.file_name.read(cx).text();
+        let extension = extension_of(&name).map(|e| e.to_uppercase()).unwrap_or_else(|| "FILE".into());
+        let size_text = self
+            .probe
+            .as_ref()
+            .and_then(|info| info.total)
+            .map(format::bytes)
+            .unwrap_or_else(|| "Unknown size".into());
+        let resumable = self.probe.as_ref().map(|info| info.resumable);
+        card(theme)
+            .w(px(112.))
+            .flex_none()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(px(5.))
+            .px(px(8.))
+            .py(px(10.))
+            .child(icon(Icon::for_category(&self.category), px(30.), theme.accent))
+            .child(
+                div()
+                    .px(px(8.))
+                    .py(px(1.))
+                    .rounded(px(theme.radius))
+                    .bg(theme.accent_soft)
+                    .text_color(theme.accent)
+                    .text_size(px(11.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(extension),
+            )
+            .child(div().text_size(px(14.)).font_weight(FontWeight::SEMIBOLD).child(size_text))
+            .child(match resumable {
+                Some(true) => div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .text_size(px(12.))
+                    .text_color(theme.success)
+                    .child(icon(Icon::Check, px(12.), theme.success))
+                    .child("Resumable"),
+                Some(false) => div().text_size(px(12.)).text_color(theme.warning).child("Can't resume"),
+                None => div(),
+            })
+    }
+
+    fn render_info_fluent(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+        let remember_label = format!("Remember this folder for \u{201c}{}\u{201d}", self.category);
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(field_row_inline("URL", LABEL_WIDTH, self.url_display.clone(), theme))
+            .child(
+                div()
+                    .flex()
+                    .items_start()
+                    .gap(px(12.))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .gap(px(8.))
+                            .child(field_row_inline(
+                                "Category",
+                                LABEL_WIDTH,
+                                div().w(px(200.)).child(self.render_category_picker(theme, cx)),
+                                theme,
+                            ))
+                            .child(field_row_inline(
+                                "Save to",
+                                LABEL_WIDTH,
+                                div()
+                                    .flex()
+                                    .gap(px(6.))
+                                    .child(div().flex_1().min_w_0().child(self.folder.clone()))
+                                    .child(
+                                        Button::new("browse", "…")
+                                            .on_click(cx.listener(|this, _, window, cx| this.browse_folder(window, cx))),
+                                    ),
+                                theme,
+                            ))
+                            .child(field_row_inline("File name", LABEL_WIDTH, self.file_name.clone(), theme))
+                            .child(div().pl(px(LABEL_WIDTH + 10.)).child(
+                                Checkbox::new("remember", remember_label, self.remember_folder).on_toggle(
+                                    cx.listener(|this, checked: &bool, _, cx| {
+                                        this.remember_folder = *checked;
+                                        cx.notify();
+                                    }),
+                                ),
+                            )),
+                    )
+                    .child(self.render_file_card(theme, cx)),
+            )
+            .child(field_row_inline("Description", LABEL_WIDTH, self.description.clone(), theme))
+            .when_some(self.probe_error.as_ref(), |this, e| {
+                this.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .text_size(px(12.))
+                        .text_color(theme.warning)
+                        .child(icon(Icon::Alert, px(14.), theme.warning))
+                        .child(format!("Couldn't check the file ({e}). You can still try downloading it.")),
+                )
+            })
+            .into_any_element()
+    }
+
+    /// Windows 11 dialog: the form on a lighter layer, buttons on the darker base,
+    /// primary action first and all buttons the same width.
+    fn render_fluent(&mut self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+        let body = match self.stage {
+            Stage::EnterUrl => self.render_enter_url_fluent(theme, cx),
+            Stage::Probing => div()
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .child(self.render_enter_url_fluent(theme, cx))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .text_color(theme.muted)
+                        .child(icon(Icon::Globe, px(14.), theme.accent))
+                        .child("Contacting the server…"),
+                )
+                .into_any_element(),
+            Stage::Info => self.render_info_fluent(theme, cx),
+        };
+        let buttons: Vec<AnyElement> = match self.stage {
+            Stage::EnterUrl | Stage::Probing => vec![
+                Button::new("ok", "OK")
+                    .primary()
+                    .fill()
+                    .disabled(self.stage == Stage::Probing)
+                    .on_click(cx.listener(|this, _, window, cx| this.check_address(window, cx)))
+                    .into_any_element(),
+                Button::new("cancel", "Cancel").fill().on_click(|_, window, _| window.remove_window()).into_any_element(),
+            ],
+            Stage::Info => vec![
+                Button::new("start", "Start Download")
+                    .primary()
+                    .fill()
+                    .on_click(cx.listener(|this, _, window, cx| this.add(true, window, cx)))
+                    .into_any_element(),
+                Button::new("later", "Download Later")
+                    .fill()
+                    .on_click(cx.listener(|this, _, window, cx| this.add(false, window, cx)))
+                    .into_any_element(),
+                Button::new("cancel", "Cancel").fill().on_click(|_, window, _| window.remove_window()).into_any_element(),
+            ],
+        };
+        let button_count = buttons.len() as f32;
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .bg(theme.window)
+            .text_color(theme.text)
+            .text_size(px(13.))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .px(px(16.))
+                    .py(px(14.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
+                    .bg(theme.bg)
+                    .child(body)
+                    .when_some(self.error.as_ref(), |this, e| {
+                        this.child(div().text_color(theme.danger).text_size(px(12.)).child(e.clone()))
+                    }),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .justify_end()
+                    .px(px(16.))
+                    .py(px(10.))
+                    .bg(theme.chrome)
+                    .border_t_1()
+                    .border_color(theme.border)
+                    .child(div().flex().gap(px(8.)).w(px(124. * button_count)).children(buttons)),
+            )
+            .into_any_element()
+    }
 }
 
 impl Render for AddDialog {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(window);
+        if theme.fluent {
+            return self.render_fluent(&theme, cx);
+        }
         let body = match self.stage {
             Stage::EnterUrl => self.render_enter_url(&theme, cx),
             Stage::Probing => div()
@@ -536,5 +840,6 @@ impl Render for AddDialog {
                     .child(div().flex_1())
                     .children(buttons),
             )
+            .into_any_element()
     }
 }

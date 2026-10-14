@@ -5727,6 +5727,8 @@ dependencies = [
  "gpui",
  "log",
  "objc",
+ "png 0.17.16",
+ "raw-window-handle",
  "tachyon-engine",
  "unicode-segmentation",
  "url",

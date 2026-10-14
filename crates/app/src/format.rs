@@ -107,8 +107,12 @@ fn home() -> PathBuf {
     std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
 }
 
-/// Shows paths under the home folder as `~/…`.
+/// Shows paths under the home folder as `~/…`, except on Windows, where `~` means
+/// nothing to users and full paths are the norm.
 pub fn display_path(path: &Path) -> String {
+    if cfg!(windows) {
+        return path.display().to_string();
+    }
     let home = home();
     match path.strip_prefix(&home) {
         Ok(rest) if !home.as_os_str().is_empty() => format!("~/{}", rest.display()),

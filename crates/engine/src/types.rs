@@ -291,6 +291,47 @@ impl Default for QueueSettings {
     }
 }
 
+/// How windows look. The first three follow Windows 11; `Classic` is Tachyon's
+/// original design and the only style on other systems.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowStyle {
+    /// The standard Windows 11 look: a subtle wallpaper tint (Mica).
+    Mica,
+    /// More translucent frosted glass with floating panels.
+    LiquidGlass,
+    /// Windows 11 colours on opaque windows, for older systems or when transparency
+    /// is distracting.
+    Solid,
+    /// Tachyon's original look.
+    Classic,
+}
+
+impl Default for WindowStyle {
+    fn default() -> Self {
+        if cfg!(windows) { WindowStyle::Mica } else { WindowStyle::Classic }
+    }
+}
+
+impl WindowStyle {
+    pub const ALL: [WindowStyle; 4] =
+        [WindowStyle::Mica, WindowStyle::LiquidGlass, WindowStyle::Solid, WindowStyle::Classic];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            WindowStyle::Mica => "Mica",
+            WindowStyle::LiquidGlass => "Liquid Glass",
+            WindowStyle::Solid => "Solid",
+            WindowStyle::Classic => "Classic",
+        }
+    }
+
+    /// Whether the style draws over a translucent system backdrop.
+    pub fn is_glass(self) -> bool {
+        matches!(self, WindowStyle::Mica | WindowStyle::LiquidGlass)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -318,7 +359,21 @@ pub struct Settings {
     pub start_captured_immediately: bool,
     pub categories: Vec<CategoryDef>,
     pub queue: QueueSettings,
+    pub window_style: WindowStyle,
+    /// Closing the main window keeps Tachyon running in the notification area.
+    pub close_to_tray: bool,
+    /// Start Tachyon in the notification area when the user signs in.
+    pub start_with_system: bool,
 }
+
+/// The platform part of the default User-Agent, as browsers on this system send it.
+const PLATFORM_UA: &str = if cfg!(windows) {
+    "Windows NT 10.0; Win64; x64"
+} else if cfg!(target_os = "macos") {
+    "Macintosh; Intel Mac OS X 10_15_7"
+} else {
+    "X11; Linux x86_64"
+};
 
 impl Default for Settings {
     fn default() -> Self {
@@ -335,10 +390,7 @@ impl Default for Settings {
             global_speed_limit: 0,
             download_dir,
             use_category_folders: true,
-            user_agent: format!(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Tachyon/{}",
-                env!("CARGO_PKG_VERSION")
-            ),
+            user_agent: format!("Mozilla/5.0 ({PLATFORM_UA}) Tachyon/{}", env!("CARGO_PKG_VERSION")),
             proxy: String::new(),
             show_progress_window: true,
             show_complete_dialog: true,
@@ -348,6 +400,9 @@ impl Default for Settings {
             start_captured_immediately: false,
             categories: default_categories(),
             queue: QueueSettings::default(),
+            window_style: WindowStyle::default(),
+            close_to_tray: true,
+            start_with_system: false,
         }
     }
 }
@@ -363,6 +418,10 @@ impl Settings {
         self.read_timeout_secs = self.read_timeout_secs.clamp(1, 600);
         self.retry_delay_secs = self.retry_delay_secs.min(600);
         self.queue.max_concurrent = self.queue.max_concurrent.clamp(1, 32);
+        // Builds before Windows support saved the macOS default User-Agent everywhere.
+        if !cfg!(target_os = "macos") && self.user_agent.contains("Macintosh") && self.user_agent.contains(" Tachyon/") {
+            self.user_agent = format!("Mozilla/5.0 ({PLATFORM_UA}) Tachyon/{}", env!("CARGO_PKG_VERSION"));
+        }
         self
     }
 }
