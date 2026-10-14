@@ -306,7 +306,7 @@ pub fn open_options(cx: &mut App) {
     if activate(cx.global::<AppState>().options_window, cx) {
         return;
     }
-    let bounds = centered(size(px(640.), px(520.)), cx);
+    let bounds = centered(size(px(800.), px(600.)), cx);
     if let Ok(handle) = cx.open_window(dialog_options("Options", bounds), |window, cx| {
         cx.new(|cx| OptionsWindow::new(window, cx))
     }) {

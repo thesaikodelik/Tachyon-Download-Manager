@@ -367,54 +367,54 @@ impl AddDialog {
         }
     }
 
-    /// The "already in your list" box shown when Options says to ask.
-    fn render_duplicate(&self, existing: &DownloadSnapshot, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+    /// A quiet Windows-style info bar; the choices replace the dialog's buttons.
+    fn render_duplicate(&self, existing: &DownloadSnapshot, theme: &Theme) -> impl IntoElement {
         div()
             .flex()
-            .flex_col()
-            .gap(px(8.))
+            .items_center()
+            .gap(px(10.))
             .px(px(12.))
-            .py(px(10.))
+            .py(px(9.))
             .rounded(px(theme.radius_large))
             .border_1()
-            .border_color(theme.warning)
+            .border_color(theme.border)
             .bg(theme.layer)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(icon(Icon::Alert, px(16.), theme.warning))
-                    .child(div().font_weight(FontWeight::SEMIBOLD).child("This link is already in your list"))
-                    .child(div().text_color(theme.muted).child(format!("· {}", format::status_line(existing)))),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .child(Button::new("dup-again", "Add it again").compact().on_click(cx.listener(
-                        |this, _, window, cx| {
-                            this.allow_duplicate = true;
-                            this.duplicate = None;
-                            this.add(true, window, cx);
-                        },
-                    )))
-                    .child(Button::new("dup-over", "Download it over again").compact().on_click(cx.listener(
-                        |this, _, window, cx| {
-                            if let Some(existing) = this.duplicate.take() {
-                                this.download_over(existing, true, window, cx);
-                            }
-                        },
-                    )))
-                    .child(Button::new("dup-show", "Show the existing one").compact().on_click(cx.listener(
-                        |this, _, window, cx| {
-                            if let Some(existing) = this.duplicate.take() {
-                                Self::show_existing(&existing, cx);
-                                window.remove_window();
-                            }
-                        },
-                    ))),
-            )
+            .child(icon(Icon::Info, px(16.), theme.accent))
+            .child(div().font_weight(FontWeight::SEMIBOLD).child("This link is already in your list"))
+            .child(div().text_color(theme.muted).child(format::status_line(existing)))
+    }
+
+    /// Buttons while a duplicate is waiting for an answer.
+    fn duplicate_buttons(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        vec![
+            Button::new("dup-again", "Add again")
+                .primary()
+                .fill()
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.allow_duplicate = true;
+                    this.duplicate = None;
+                    this.add(true, window, cx);
+                }))
+                .into_any_element(),
+            Button::new("dup-over", "Download over it")
+                .fill()
+                .on_click(cx.listener(|this, _, window, cx| {
+                    if let Some(existing) = this.duplicate.take() {
+                        this.download_over(existing, true, window, cx);
+                    }
+                }))
+                .into_any_element(),
+            Button::new("dup-show", "Show existing")
+                .fill()
+                .on_click(cx.listener(|this, _, window, cx| {
+                    if let Some(existing) = this.duplicate.take() {
+                        Self::show_existing(&existing, cx);
+                        window.remove_window();
+                    }
+                }))
+                .into_any_element(),
+            Button::new("cancel", "Cancel").fill().on_click(|_, window, _| window.remove_window()).into_any_element(),
+        ]
     }
 
     pub(crate) fn add(&mut self, start: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -685,6 +685,51 @@ impl AddDialog {
             })
     }
 
+    /// The address, with whether it can be resumed at its end. A long address fades
+    /// out under the badge instead of running into it.
+    fn render_url_field(&self, theme: &Theme) -> impl IntoElement {
+        let badge = match self.probe.as_ref().map(|info| info.resumable) {
+            Some(true) => Some((Icon::Check, "Resumable", theme.success)),
+            Some(false) => Some((Icon::Alert, "Can't resume", theme.warning)),
+            None => None,
+        };
+        let field_bg = theme.input_readonly;
+        div().relative().child(self.url_display.clone()).when_some(badge, |this, (glyph, label, color)| {
+            this.child(
+                div()
+                    .absolute()
+                    .top(px(1.))
+                    .bottom(px(1.))
+                    .right(px(1.))
+                    .flex()
+                    .rounded_r(px(theme.radius))
+                    .overflow_hidden()
+                    .child(div().w(px(28.)).h_full().bg(gpui::linear_gradient(
+                        90.,
+                        gpui::linear_color_stop(field_bg.opacity(0.), 0.),
+                        gpui::linear_color_stop(field_bg, 1.),
+                    )))
+                    .child(
+                        div().h_full().flex().items_center().pr(px(5.)).bg(field_bg).child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(4.))
+                                .px(px(7.))
+                                .py(px(1.))
+                                .rounded_full()
+                                .bg(color.opacity(0.12))
+                                .text_size(px(11.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(color)
+                                .child(icon(glyph, px(11.), color))
+                                .child(label),
+                        ),
+                    ),
+            )
+        })
+    }
+
     /// The file at a glance, like the type icon and size IDM shows beside the form.
     fn render_file_card(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let name = self.file_name.read(cx).text();
@@ -695,7 +740,6 @@ impl AddDialog {
             .and_then(|info| info.total)
             .map(format::bytes)
             .unwrap_or_else(|| "Unknown size".into());
-        let resumable = self.probe.as_ref().map(|info| info.resumable);
         card(theme)
             .w(px(112.))
             .flex_none()
@@ -723,18 +767,6 @@ impl AddDialog {
                     .child(extension),
             )
             .child(div().text_size(px(14.)).font_weight(FontWeight::SEMIBOLD).child(size_text))
-            .child(match resumable {
-                Some(true) => div()
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
-                    .text_size(px(12.))
-                    .text_color(theme.success)
-                    .child(icon(Icon::Check, px(12.), theme.success))
-                    .child("Resumable"),
-                Some(false) => div().text_size(px(12.)).text_color(theme.warning).child("Can't resume"),
-                None => div(),
-            })
     }
 
     fn render_info_fluent(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
@@ -743,7 +775,7 @@ impl AddDialog {
             .flex()
             .flex_col()
             .gap(px(8.))
-            .child(field_row_inline("URL", LABEL_WIDTH, self.url_display.clone(), theme))
+            .child(field_row_inline("URL", LABEL_WIDTH, self.render_url_field(theme), theme))
             .child(
                 div()
                     .flex()
@@ -770,7 +802,7 @@ impl AddDialog {
                                     .gap(px(6.))
                                     .child(div().flex_1().min_w_0().child(self.folder.clone()))
                                     .child(
-                                        Button::new("browse", "…")
+                                        Button::new("browse", "Browse…")
                                             .on_click(cx.listener(|this, _, window, cx| this.browse_folder(window, cx))),
                                     ),
                                 theme,
@@ -788,7 +820,7 @@ impl AddDialog {
                     .child(self.render_file_card(theme, cx)),
             )
             .child(field_row_inline("Description", LABEL_WIDTH, self.description.clone(), theme))
-            .when_some(self.duplicate.clone(), |this, existing| this.child(self.render_duplicate(&existing, theme, cx)))
+            .when_some(self.duplicate.clone(), |this, existing| this.child(self.render_duplicate(&existing, theme)))
             .when_some(self.probe_error.as_ref(), |this, e| {
                 this.child(
                     div()
@@ -827,6 +859,7 @@ impl AddDialog {
             Stage::Info => self.render_info_fluent(theme, cx),
         };
         let buttons: Vec<AnyElement> = match self.stage {
+            Stage::Info if self.duplicate.is_some() => self.duplicate_buttons(cx),
             Stage::EnterUrl | Stage::Probing => vec![
                 Button::new("ok", "OK")
                     .primary()

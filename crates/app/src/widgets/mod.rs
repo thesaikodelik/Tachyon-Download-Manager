@@ -104,7 +104,9 @@ impl RenderOnce for Button {
         div()
             .id(self.id)
             .flex()
-            .when(self.fill, |this| this.flex_1().min_w(px(96.)))
+            // One width for every button of a kind, so a dialog's buttons line up.
+            .min_w(px(if self.compact { 76. } else { 96. }))
+            .when(self.fill, |this| this.flex_1())
             .when(!self.fill, |this| this.flex_none())
             .items_center()
             .justify_center()
