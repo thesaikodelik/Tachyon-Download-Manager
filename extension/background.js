@@ -48,7 +48,7 @@ async function cookieHeader(url) {
 }
 
 /** Sends one download to Tachyon; resolves to true if the app accepted it. */
-async function sendToTachyon({ url, referrer, filename }) {
+async function sendToTachyon({ url, referrer, filename, mediaFormat, size }) {
   if (!/^https?:/i.test(url)) return false;
   const { port } = await settings();
   const body = {
@@ -57,6 +57,8 @@ async function sendToTachyon({ url, referrer, filename }) {
     filename: filename || "",
     cookies: await cookieHeader(url),
     userAgent: navigator.userAgent,
+    mediaFormat: mediaFormat || "",
+    size: size || null,
   };
   try {
     const response = await fetch(endpoint(port, "/v1/download"), {
@@ -68,6 +70,24 @@ async function sendToTachyon({ url, referrer, filename }) {
     return response.ok;
   } catch {
     return false;
+  }
+}
+
+/** Asks Tachyon (through yt-dlp) which qualities a video page offers. */
+async function mediaFormats(url) {
+  const { port } = await settings();
+  try {
+    const response = await fetch(endpoint(port, "/v1/media/formats"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tachyon-Client": "extension" },
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(55000),
+    });
+    if (response.status === 503) return { missing: true };
+    const body = await response.json().catch(() => ({}));
+    return response.ok ? body : { error: body.error || `HTTP ${response.status}` };
+  } catch {
+    return { offline: true };
   }
 }
 
@@ -223,7 +243,11 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     return true;
   }
   if (message?.type === "download-video") {
-    sendToTachyon({ url: message.url, referrer: message.referrer, filename: message.filename }).then(reply);
+    sendToTachyon(message).then(reply);
+    return true;
+  }
+  if (message?.type === "media-formats") {
+    mediaFormats(message.url).then(reply);
     return true;
   }
   if (message?.type === "status") {

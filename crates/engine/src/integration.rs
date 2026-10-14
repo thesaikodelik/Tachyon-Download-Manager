@@ -34,6 +34,11 @@ pub(crate) trait Host: Send + Sync {
     fn capture(&self, request: AddRequest, program: Option<&Path>) -> bool;
     /// What the extension in `program` should take over.
     fn config(&self, program: Option<&Path>) -> ClientConfig;
+    /// The qualities a video page offers, from yt-dlp.
+    fn media_formats(
+        &self,
+        url: String,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<crate::media::MediaInfo, String>> + Send>>;
 }
 
 /// Tells an extension which downloads to hand over, so it never cancels one in the
@@ -61,6 +66,16 @@ struct CaptureBody {
     user_agent: Option<String>,
     #[serde(default)]
     description: Option<String>,
+    /// For a video page: the quality picked, as a yt-dlp format selector.
+    #[serde(default)]
+    media_format: Option<String>,
+    #[serde(default)]
+    size: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct MediaQuery {
+    url: String,
 }
 
 pub(crate) async fn serve(port: u16, cancel: CancellationToken, host: Arc<dyn Host>) {
@@ -83,7 +98,8 @@ pub(crate) async fn serve(port: u16, cancel: CancellationToken, host: Arc<dyn Ho
         let host = host.clone();
         tokio::spawn(async move {
             let (stream, peer) = stream;
-            let _ = tokio::time::timeout(Duration::from_secs(10), handle(stream, peer, port, host)).await;
+            // Long enough for yt-dlp to read a video page.
+            let _ = tokio::time::timeout(Duration::from_secs(60), handle(stream, peer, port, host)).await;
         });
     }
 }
@@ -190,6 +206,26 @@ async fn handle(mut stream: TcpStream, peer: SocketAddr, port: u16, host: Arc<dy
     let program = program.as_deref();
     host.seen(program);
     match (request.method.as_str(), request.path.as_str()) {
+        ("POST", "/v1/media/formats") => {
+            let Ok(query) = serde_json::from_slice::<MediaQuery>(&request.body) else {
+                respond(&mut stream, "400 Bad Request", r#"{"error":"invalid json"}"#).await;
+                return;
+            };
+            if !url::Url::parse(&query.url).is_ok_and(|u| matches!(u.scheme(), "http" | "https")) {
+                respond(&mut stream, "422 Unprocessable Entity", r#"{"error":"unsupported url"}"#).await;
+                return;
+            }
+            match host.media_formats(query.url).await {
+                Ok(info) => respond(&mut stream, "200 OK", &serde_json::to_string(&info).unwrap_or_default()).await,
+                Err(e) if e == "yt-dlp missing" => {
+                    respond(&mut stream, "503 Service Unavailable", r#"{"error":"yt-dlp missing"}"#).await
+                }
+                Err(e) => {
+                    let body = serde_json::json!({ "error": e }).to_string();
+                    respond(&mut stream, "422 Unprocessable Entity", &body).await
+                }
+            }
+        }
         ("GET", "/v1/config") => {
             let body = serde_json::to_string(&host.config(program)).unwrap_or_default();
             respond(&mut stream, "200 OK", &body).await;
@@ -217,6 +253,10 @@ async fn handle(mut stream: TcpStream, peer: SocketAddr, port: u16, host: Arc<dy
                     cookies: capture.cookies.filter(|c| !c.is_empty()),
                     user_agent: capture.user_agent.filter(|u| !u.is_empty()),
                     credentials: None,
+                    media: capture
+                        .media_format
+                        .filter(|f| !f.is_empty())
+                        .map(|format| crate::types::MediaSpec { format, size: capture.size }),
                 },
                 file_name: capture.filename.filter(|f| !f.is_empty()),
                 description: capture.description.unwrap_or_default(),

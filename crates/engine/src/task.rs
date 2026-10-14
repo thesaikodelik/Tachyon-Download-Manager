@@ -56,6 +56,8 @@ pub(crate) struct TaskInput {
 
 pub(crate) struct TaskEnv {
     pub client: Client,
+    /// Where yt-dlp is kept, for video pages.
+    pub tools_dir: PathBuf,
     pub settings: Settings,
     pub global_limiter: Arc<RateLimiter>,
 }
@@ -83,6 +85,8 @@ pub(crate) struct TaskShared {
     map: Mutex<Option<Arc<SegmentMap>>>,
     speed: AtomicU64,
     connections: Mutex<Vec<ConnectionSnapshot>>,
+    /// Bytes and expected size of a video page's download, which has no segments.
+    media: Mutex<Option<(u64, Option<u64>)>>,
 }
 
 impl TaskShared {
@@ -96,6 +100,7 @@ impl TaskShared {
             map: Mutex::new(None),
             speed: AtomicU64::new(0),
             connections: Mutex::new(Vec::new()),
+            media: Mutex::new(None),
         }
     }
 
@@ -103,8 +108,28 @@ impl TaskShared {
         *self.phase.lock()
     }
 
-    fn set_phase(&self, phase: DownloadStatus) {
+    pub(crate) fn set_phase(&self, phase: DownloadStatus) {
         *self.phase.lock() = phase;
+    }
+
+    /// Marks a video page's download as receiving data.
+    pub(crate) fn set_phase_downloading(&self) {
+        let mut phase = self.phase.lock();
+        if *phase == DownloadStatus::Connecting {
+            *phase = DownloadStatus::Downloading;
+        }
+    }
+
+    pub(crate) fn set_speed(&self, speed: u64) {
+        self.speed.store(speed, Ordering::Relaxed);
+    }
+
+    pub(crate) fn set_media_progress(&self, downloaded: u64, total: Option<u64>) {
+        *self.media.lock() = Some((downloaded, total));
+    }
+
+    pub fn media_progress(&self) -> Option<(u64, Option<u64>)> {
+        *self.media.lock()
     }
 
     pub fn meta(&self) -> Option<TaskMeta> {

@@ -101,6 +101,23 @@ impl integration::Host for IntegrationHost {
         true
     }
 
+    fn media_formats(
+        &self,
+        url: String,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<crate::media::MediaInfo, String>> + Send>> {
+        let inner = self.0.upgrade();
+        Box::pin(async move {
+            let inner = inner.ok_or("shutting down")?;
+            let tools = crate::media::tools(&inner.tools_dir());
+            if tools.yt_dlp.is_none() {
+                inner.push_event(EngineEvent::MediaToolMissing);
+                return Err("yt-dlp missing".into());
+            }
+            let settings = inner.settings.read().clone();
+            crate::media::list(&url, &settings, &tools).await
+        })
+    }
+
     fn config(&self, program: Option<&std::path::Path>) -> integration::ClientConfig {
         let Some(inner) = self.0.upgrade() else {
             return integration::ClientConfig { capture: false, extensions: Vec::new(), excluded_sites: Vec::new() };
@@ -223,9 +240,33 @@ impl Engine {
         Ok(())
     }
 
+    /// The helper programs for video pages, and whether they are installed.
+    pub fn media_tools(&self) -> crate::media::MediaTools {
+        crate::media::tools(&self.inner.tools_dir())
+    }
+
+    /// Downloads yt-dlp into Tachyon's data folder.
+    pub fn install_media_tool(&self) -> impl Future<Output = Result<(), EngineError>> + Send + 'static {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let client = self.inner.client.read().clone();
+        let tools_dir = self.inner.tools_dir();
+        self.inner.handle.spawn(async move {
+            let _ = tx.send(crate::media::install_yt_dlp(&client, &tools_dir).await.map(|_| ()));
+        });
+        async move { rx.await.unwrap_or(Err(EngineError::Cancelled)) }
+    }
+
     /// Asks the server about `spec` without downloading anything.
     pub fn probe(&self, spec: RequestSpec) -> impl Future<Output = Result<ProbeInfo, EngineError>> + Send + 'static {
         let mut spec = spec;
+        // A video page's size and name came with the quality the user picked.
+        let media = spec.media.clone().map(|media| ProbeInfo {
+            final_url: spec.url.clone(),
+            total: media.size,
+            resumable: true,
+            content_type: Some("video/mp4".into()),
+            ..Default::default()
+        });
         if spec.credentials.is_none() {
             spec.credentials = self.inner.settings.read().login_for(&spec.url);
         }
@@ -233,6 +274,10 @@ impl Engine {
         let client = self.inner.client.read().clone();
         let timeout = Duration::from_secs(self.inner.settings.read().connect_timeout_secs + 10);
         self.inner.handle.spawn(async move {
+            if let Some(info) = media {
+                let _ = tx.send(Ok(info));
+                return;
+            }
             let result = match tokio::time::timeout(timeout, http::probe(&client, &spec, 0, None)).await {
                 Ok(result) => result.map(|probe| probe.info),
                 Err(_) => Err(EngineError::Timeout),
@@ -590,6 +635,11 @@ fn snapshot_of(record: &DownloadRecord, task: Option<&Arc<TaskShared>>) -> Downl
             snapshot.resumable = Some(meta.info.resumable);
             snapshot.file_name = meta.file_name;
         }
+        if let Some((downloaded, total)) = task.media_progress() {
+            snapshot.downloaded = downloaded;
+            snapshot.size = total.or(snapshot.size);
+            snapshot.resumable = Some(true);
+        }
         if let Some(total) = snapshot.size
             && snapshot.speed > 0
         {
@@ -615,6 +665,11 @@ fn absorb(record: &mut DownloadRecord, task: &TaskShared) {
         record.downloaded = segments.iter().map(|s| s.downloaded()).sum();
         record.segments = segments;
     }
+    if let Some((downloaded, total)) = task.media_progress() {
+        record.downloaded = downloaded;
+        record.size = total.or(record.size);
+        record.resumable = Some(true);
+    }
     record.status = task.phase();
 }
 
@@ -623,6 +678,10 @@ fn matches_time(t: DayTime, hour: u32, minute: u32) -> bool {
 }
 
 impl Inner {
+    fn tools_dir(&self) -> PathBuf {
+        self.data_dir.join("tools")
+    }
+
     fn mark_dirty(&self) {
         self.dirty.store(true, Ordering::Release);
     }
@@ -747,14 +806,20 @@ impl Inner {
         };
         let shared = Arc::new(TaskShared::new(record.speed_limit));
         state.tasks.insert(id, shared.clone());
+        let media = record.spec.media.is_some();
         let env = TaskEnv {
             client: self.client.read().clone(),
+            tools_dir: self.tools_dir(),
             settings: self.settings.read().clone(),
             global_limiter: self.global_limiter.clone(),
         };
         let inner = self.clone();
         self.handle.spawn(async move {
-            let outcome = task::run(input, shared.clone(), env).await;
+            let outcome = if media {
+                crate::media::run(input, shared.clone(), env).await
+            } else {
+                task::run(input, shared.clone(), env).await
+            };
             inner.finish(id, &shared, outcome);
         });
         self.mark_dirty();

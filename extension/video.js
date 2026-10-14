@@ -97,6 +97,8 @@
       }
       .menu.shown { display: flex; }
       .item {
+        display: flex;
+        gap: 16px;
         padding: 6px 10px;
         border-radius: 4px;
         cursor: pointer;
@@ -105,7 +107,7 @@
         white-space: nowrap;
       }
       .item:hover { background: var(--hover); }
-      .item .muted { opacity: 0.6; margin-left: 6px; }
+      .item .muted { opacity: 0.6; margin-left: auto; }
       @media (prefers-reduced-motion: reduce) {
         .btn { transition: none; }
       }
@@ -228,17 +230,45 @@
     return `${title || "video"}.${ext}`;
   }
 
+  // Qualities Tachyon (through yt-dlp) found for each page, so it reads a page once.
+  const qualities = new Map();
+
+  function pageQualities() {
+    const page = location.href;
+    if (!qualities.has(page)) {
+      const asked = chrome.runtime.sendMessage({ type: "media-formats", url: page }).catch(() => ({ offline: true }));
+      qualities.set(page, asked);
+      // Ask again next time unless it worked.
+      asked.then((r) => {
+        if (!r?.choices?.length) qualities.delete(page);
+      });
+    }
+    return qualities.get(page);
+  }
+
   async function expand() {
     candidates = await findCandidates();
-    if (!candidates.length) {
-      // A blob: source is a stream assembled from pieces; otherwise the file was
-      // most likely loaded before the extension started watching this tab.
-      const src = video?.currentSrc || "";
-      label.textContent = src.startsWith("blob:") ? "Played in pieces – not supported yet" : "Reload the page to find it";
-    } else if (candidates.length === 1) {
+    if (candidates.length === 1) {
       label.textContent = formatSize(candidates[0].size) || "Download";
-    } else {
+    } else if (candidates.length > 1) {
       label.textContent = `${candidates.length} files`;
+    } else {
+      // Picture and sound come in pieces (YouTube and the like): Tachyon reads the page.
+      label.textContent = "Finding qualities…";
+      button.classList.add("open");
+      const result = await pageQualities();
+      if (result?.choices?.length) {
+        candidates = result.choices.map((c) => ({ ...c, page: true, title: result.title }));
+        const best = candidates[0];
+        label.textContent =
+          candidates.length === 1 ? `${best.label} · ${formatSize(best.size)}` : `${best.label} · ${candidates.length} qualities`;
+      } else if (result?.missing) {
+        label.textContent = "Tachyon needs yt-dlp – see Tachyon";
+      } else if (result?.offline) {
+        label.textContent = "Tachyon isn't running";
+      } else {
+        label.textContent = result?.error ? "No video found here" : "Reload the page to find it";
+      }
     }
     button.classList.add("open");
   }
@@ -274,13 +304,23 @@
     menu.classList.add("shown");
   }
 
+  function pageFileName(candidate) {
+    const title = (candidate.title || document.title || "video").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 120);
+    return `${title || "video"}.${candidate.ext || "mp4"}`;
+  }
+
   async function download(candidate) {
-    const ok = await chrome.runtime.sendMessage({
-      type: "download-video",
-      url: candidate.url,
-      filename: fileName(candidate.url),
-      referrer: location.href,
-    });
+    const message = candidate.page
+      ? {
+          type: "download-video",
+          url: location.href,
+          filename: pageFileName(candidate),
+          referrer: location.href,
+          mediaFormat: candidate.format,
+          size: candidate.size,
+        }
+      : { type: "download-video", url: candidate.url, filename: fileName(candidate.url), referrer: location.href };
+    const ok = await chrome.runtime.sendMessage(message);
     label.textContent = ok ? "Sent to Tachyon" : "Tachyon isn't running";
     button.classList.add("open");
     setTimeout(() => {
@@ -308,7 +348,11 @@
       download(candidates[0]);
     } else if (candidates.length > 1) {
       openMenu(
-        candidates.map((c) => ({ text: nameOf(c.url), note: formatSize(c.size), run: () => download(c) })),
+        candidates.map((c) => ({
+          text: c.page ? c.label : nameOf(c.url),
+          note: formatSize(c.size),
+          run: () => download(c),
+        })),
       );
     }
   });

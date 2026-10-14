@@ -96,6 +96,18 @@ pub struct RequestSpec {
     pub cookies: Option<String>,
     pub user_agent: Option<String>,
     pub credentials: Option<Credentials>,
+    /// Set for a video page, which yt-dlp downloads instead of a plain request.
+    pub media: Option<MediaSpec>,
+}
+
+/// A video page to download through yt-dlp, in one of the qualities it offered.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MediaSpec {
+    /// yt-dlp's format selector.
+    pub format: String,
+    /// Approximate size of the finished file.
+    pub size: Option<u64>,
 }
 
 impl RequestSpec {
@@ -230,6 +242,8 @@ pub enum EngineEvent {
     Captured(Box<AddRequest>),
     /// A download asked for a system action once it finished.
     PostAction(PostAction),
+    /// The browser asked for a video's qualities, but yt-dlp isn't installed yet.
+    MediaToolMissing,
     /// The download limit (Options → Connection) was reached; downloads were stopped
     /// and can start again at `resumes_at` (Unix time).
     QuotaReached { resumes_at: i64 },

@@ -13,6 +13,7 @@ mod fsutil;
 mod http;
 mod integration;
 mod limiter;
+mod media;
 mod persist;
 mod segment;
 mod sender;
@@ -21,6 +22,7 @@ mod types;
 
 pub use categories::{GENERAL, classify, default_categories, extension_of, looks_downloadable};
 pub use engine::Engine;
+pub use media::{MediaChoice, MediaInfo, MediaTools};
 pub use error::EngineError;
 pub use fsutil::PART_SUFFIX;
 pub use http::{derive_file_name, sanitize_file_name};
