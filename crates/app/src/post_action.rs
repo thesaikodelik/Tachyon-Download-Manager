@@ -10,7 +10,7 @@ use tachyon_engine::PostAction;
 use crate::assets::Icon;
 use crate::format;
 use crate::theme::Theme;
-use crate::widgets::{Button, icon, separator};
+use crate::widgets::{Button, icon, separator, title_bar};
 
 const COUNTDOWN_SECS: u32 = 30;
 
@@ -113,6 +113,7 @@ impl Render for PostActionDialog {
             .size_full()
             .flex()
             .flex_col()
+            .child(title_bar("Downloads Finished", false, window, &theme))
             .bg(theme.bg)
             .text_color(theme.text)
             .text_size(px(13.))

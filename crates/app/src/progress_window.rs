@@ -20,7 +20,7 @@ use crate::format;
 use crate::theme::Theme;
 use crate::widgets::text_input::{InputEvent, TextInput};
 use crate::widgets::{
-    Button, Checkbox, card, field_row, fit_window_height, icon, progress_bar, radio_group, section_title,
+    Button, Checkbox, card, field_row, fit_window_height, title_bar, icon, progress_bar, radio_group, section_title,
     segment_bar, separator, tabs, truncated,
 };
 
@@ -367,8 +367,18 @@ impl ProgressWindow {
             .into_any_element()
     }
 
-    fn render_fluent(&mut self, d: DownloadSnapshot, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+    fn render_fluent(
+        &mut self,
+        d: DownloadSnapshot,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let active = d.status.is_active();
+        let title = match d.progress() {
+            Some(p) if d.downloaded > 0 => format!("{:.0}% {}", p * 100.0, d.file_name),
+            _ => d.file_name.clone(),
+        };
         let tab_body = match self.tab {
             0 => self.render_status_fluent(&d, theme),
             1 => self.render_limiter_tab(theme, cx),
@@ -389,6 +399,7 @@ impl ProgressWindow {
                 div()
                     .flex()
                     .flex_col()
+                    .child(title_bar(title, false, window, theme))
                     .child(
                 div()
                     .flex()
@@ -504,7 +515,7 @@ impl Render for ProgressWindow {
             return div().size_full().bg(theme.bg).into_any_element();
         };
         if theme.fluent {
-            return self.render_fluent(d, &theme, cx);
+            return self.render_fluent(d, &theme, window, cx);
         }
         let active = d.status.is_active();
         let tab_body = match self.tab {

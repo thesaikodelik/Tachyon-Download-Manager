@@ -13,7 +13,9 @@ use crate::assets::Icon;
 use crate::format;
 use crate::theme::Theme;
 use crate::widgets::text_input::TextInput;
-use crate::widgets::{Button, Checkbox, icon, radio_group, section_title, separator, stepper, tabs, truncated};
+use crate::widgets::{
+    Button, Checkbox, icon, radio_group, section_title, separator, stepper, tabs, title_bar, truncated,
+};
 
 const DAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -324,6 +326,7 @@ impl Render for SchedulerWindow {
             .bg(theme.bg)
             .text_color(theme.text)
             .text_size(px(13.))
+            .child(title_bar("Scheduler", false, window, &theme))
             .child(
                 div()
                     .flex()

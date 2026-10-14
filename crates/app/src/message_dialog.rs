@@ -6,7 +6,7 @@ use gpui::{App, AppContext, Context, FontWeight, SharedString, Window, div, prel
 use crate::app;
 use crate::assets::Icon;
 use crate::theme::Theme;
-use crate::widgets::{Button, fit_window_height, icon};
+use crate::widgets::{Button, fit_window_height, icon, title_bar};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -15,6 +15,7 @@ pub enum Kind {
 }
 
 pub struct MessageDialog {
+    title: SharedString,
     kind: Kind,
     heading: SharedString,
     body: SharedString,
@@ -24,8 +25,9 @@ pub struct MessageDialog {
 pub fn show(kind: Kind, title: &str, heading: impl Into<SharedString>, body: impl Into<SharedString>, cx: &mut App) {
     let heading = heading.into();
     let body = body.into();
+    let window_title = SharedString::from(title.to_string());
     let bounds = app::centered(size(px(440.), px(150.)), cx);
-    cx.open_window(app::dialog_options(title, bounds), |_, cx| cx.new(|_| MessageDialog { kind, heading, body }))
+    cx.open_window(app::dialog_options(title, bounds), |_, cx| cx.new(|_| MessageDialog { title: window_title, kind, heading, body }))
         .ok();
     cx.activate(true);
 }
@@ -46,6 +48,7 @@ impl Render for MessageDialog {
                 div()
                     .flex()
                     .flex_col()
+                    .child(title_bar(self.title.clone(), false, window, &theme))
                     .child(
                         div()
                             .flex()

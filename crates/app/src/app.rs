@@ -170,12 +170,17 @@ pub fn centered(size: Size<Pixels>, cx: &App) -> Bounds<Pixels> {
     Bounds::centered(None, size, cx)
 }
 
+/// Windows 11 styles draw their own title bar on the window's glass.
+pub fn custom_title_bar() -> bool {
+    cfg!(windows) && crate::theme::style() != tachyon_engine::WindowStyle::Classic
+}
+
 pub fn dialog_options(title: &str, bounds: Bounds<Pixels>) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {
             title: Some(title.to_string().into()),
-            appears_transparent: false,
+            appears_transparent: custom_title_bar(),
             traffic_light_position: None,
         }),
         focus: true,
@@ -219,7 +224,7 @@ pub fn open_main_window_with(show: bool, cx: &mut App) {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {
             title: Some("Tachyon Download Manager".into()),
-            appears_transparent: false,
+            appears_transparent: custom_title_bar(),
             traffic_light_position: Some(point(px(12.), px(12.))),
         }),
         window_min_size: Some(size(px(760.), px(420.))),

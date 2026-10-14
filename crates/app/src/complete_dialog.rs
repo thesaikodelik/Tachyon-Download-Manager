@@ -16,7 +16,7 @@ use crate::platform::{self, DragOutcome};
 use crate::theme::Theme;
 use crate::widgets::text_input::TextInput;
 use crate::widgets::{
-    Button, Checkbox, Tooltip, card, field_row, field_row_inline, fit_window_height, icon, separator, truncated,
+    Button, Checkbox, Tooltip, card, field_row, field_row_inline, fit_window_height, title_bar, icon, separator, truncated,
 };
 
 /// How far the pointer has to move with the button down before a drag starts.
@@ -106,7 +106,13 @@ impl CompleteDialog {
 impl CompleteDialog {
     /// The IDM layout: exact size, copyable address and path, a tile to drag the
     /// file anywhere, and Open / Open with / Open folder / Close.
-    fn render_fluent(&mut self, d: DownloadSnapshot, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+    fn render_fluent(
+        &mut self,
+        d: DownloadSnapshot,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let path = d.path();
         let size_line = match d.size {
             Some(size) => format!("{} ({} bytes)", format::bytes(size), format::thousands(size)),
@@ -161,6 +167,7 @@ impl CompleteDialog {
                 div()
                     .flex()
                     .flex_col()
+                    .child(title_bar("Download Complete", false, window, theme))
                     .child(
                 div()
                     .flex()
@@ -270,7 +277,7 @@ impl Render for CompleteDialog {
             return div().size_full().bg(theme.bg).into_any_element();
         };
         if theme.fluent {
-            return self.render_fluent(d, &theme, cx);
+            return self.render_fluent(d, &theme, window, cx);
         }
         let path = d.path();
         div()

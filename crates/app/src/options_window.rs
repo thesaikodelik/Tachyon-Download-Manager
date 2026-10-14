@@ -17,7 +17,9 @@ use crate::assets::Icon;
 use crate::format;
 use crate::theme::Theme;
 use crate::widgets::text_input::TextInput;
-use crate::widgets::{Button, Checkbox, icon, radio_group, radio_row, section_title, separator, stepper, truncated};
+use crate::widgets::{
+    Button, Checkbox, icon, radio_group, radio_row, section_title, separator, stepper, title_bar, truncated,
+};
 
 const SECTIONS: [(&str, Icon); 8] = [
     ("General", Icon::Sliders),
@@ -904,6 +906,7 @@ impl Render for OptionsWindow {
             .bg(theme.window)
             .text_color(theme.text)
             .text_size(px(13.))
+            .child(title_bar("Options", false, window, &theme))
             .child(
                 div()
                     .flex()

@@ -18,7 +18,7 @@ use crate::assets::Icon;
 use crate::file_icons::file_icon_element;
 use crate::format;
 use crate::theme::Theme;
-use crate::widgets::{Button, ToolbarButton, icon, progress_bar, separator, truncated};
+use crate::widgets::{Button, ToolbarButton, icon, progress_bar, separator, title_bar, truncated};
 
 actions!(
     main_window,
@@ -1001,6 +1001,7 @@ impl Render for MainWindow {
             .bg(theme.window)
             .text_color(theme.text)
             .font_family(".SystemUIFont")
+            .child(title_bar("Tachyon Download Manager", true, window, &theme))
             .child(self.render_toolbar(&theme, cx))
             .child(
                 div()

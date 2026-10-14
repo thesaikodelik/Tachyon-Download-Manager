@@ -96,6 +96,13 @@ pub fn open_with(path: &std::path::Path) {
     imp::open_with(path)
 }
 
+/// Whether `window` was opened without Windows' title bar, so Tachyon draws its own.
+/// Measured rather than remembered, so it stays right when the style changes while
+/// windows are open: Windows' caption is at least 30 pixels tall.
+pub fn has_custom_title_bar(window: &Window) -> bool {
+    imp::has_custom_title_bar(window)
+}
+
 /// Hides a window without destroying it, so the app keeps running in the tray.
 pub fn hide_window(window: &Window) {
     imp::hide_window(window)
@@ -258,6 +265,16 @@ mod imp {
 
     pub fn native_handle(window: &Window) -> Option<usize> {
         hwnd(window).map(|h| h as usize)
+    }
+
+    pub fn has_custom_title_bar(window: &Window) -> bool {
+        use windows_sys::Win32::Foundation::RECT;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect};
+        let Some(hwnd) = hwnd(window) else { return false };
+        let (mut outer, mut inner): (RECT, RECT) = unsafe { (std::mem::zeroed(), std::mem::zeroed()) };
+        // SAFETY: valid window handle and out-pointers.
+        let ok = unsafe { GetWindowRect(hwnd, &mut outer) != 0 && GetClientRect(hwnd, &mut inner) != 0 };
+        ok && (outer.bottom - outer.top) - (inner.bottom - inner.top) < 24
     }
 
     pub fn drag_file_out(handle: usize, path: &std::path::Path) -> Result<DragOutcome, String> {
@@ -457,6 +474,10 @@ mod imp {
 
     pub fn native_handle(_: &Window) -> Option<usize> {
         None
+    }
+
+    pub fn has_custom_title_bar(_: &Window) -> bool {
+        false
     }
 
     pub fn drag_file_out(_: usize, _: &std::path::Path) -> Result<DragOutcome, String> {

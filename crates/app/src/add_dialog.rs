@@ -18,7 +18,7 @@ use crate::format::{self, display_path, expand_home};
 use crate::theme::Theme;
 use crate::widgets::text_input::{InputEvent, TextInput};
 use crate::widgets::{
-    Button, Checkbox, card, dropdown_trigger, field_row_inline, fit_window_height, icon, menu_item, menu_panel,
+    Button, Checkbox, card, dropdown_trigger, field_row_inline, fit_window_height, title_bar, icon, menu_item, menu_panel,
     truncated,
 };
 
@@ -838,7 +838,7 @@ impl AddDialog {
 
     /// Windows 11 dialog: the form on a lighter layer, buttons on the darker base,
     /// primary action first and all buttons the same width.
-    fn render_fluent(&mut self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+    fn render_fluent(&mut self, theme: &Theme, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let body = match self.stage {
             Stage::EnterUrl => self.render_enter_url_fluent(theme, cx),
             Stage::Probing => div()
@@ -892,6 +892,7 @@ impl AddDialog {
                 div()
                     .flex()
                     .flex_col()
+                    .child(title_bar(if self.stage == Stage::Info { "Download File Info" } else { "Add Download" }, false, window, theme))
                     .child(
                 div()
                     .px(px(16.))
@@ -926,7 +927,7 @@ impl Render for AddDialog {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(window);
         if theme.fluent {
-            return self.render_fluent(&theme, cx);
+            return self.render_fluent(&theme, window, cx);
         }
         let body = match self.stage {
             Stage::EnterUrl => self.render_enter_url(&theme, cx),

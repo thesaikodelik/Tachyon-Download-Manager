@@ -1,4 +1,7 @@
 pub mod text_input;
+pub mod title_bar;
+
+pub use title_bar::title_bar;
 
 use std::rc::Rc;
 
