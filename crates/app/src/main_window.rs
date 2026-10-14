@@ -27,6 +27,10 @@ actions!(
 
 const CONTEXT: &str = "MainWindow";
 const ROW_HEIGHT: f32 = 30.;
+/// Where the category tree's guide line runs, in line with All Downloads' accent bar.
+const TREE_LINE_X: f32 = 20.;
+/// Where indented category rows start, just past the guide line.
+const TREE_INDENT: f32 = 30.;
 
 /// How far the current batch of downloads is, all together: everything that has run
 /// since downloading last started (finished ones included, so the bolt never drops
@@ -505,16 +509,20 @@ impl MainWindow {
     ) -> impl IntoElement {
         let active = self.filter == filter;
         let theme = *theme;
+        // Windows 11 styles show categories as a tree under All Downloads: indented
+        // past the guide line, a little shorter, their selection lighting the line.
+        let child = indent && theme.fluent;
         div()
             .id(SharedString::from(format!("side-{key}")))
             .flex()
             .items_center()
             .gap(px(8.))
             .relative()
-            .h(px(if theme.fluent { 32. } else { 28. }))
-            .pl(px(if indent { 28. } else { 10. }))
+            .h(px(if child { 28. } else if theme.fluent { 32. } else { 28. }))
+            .pl(px(if child { 10. } else if indent { 28. } else { 10. }))
             .pr(px(10.))
-            .mx(px(8.))
+            .when(child, |this| this.ml(px(TREE_INDENT)).mr(px(8.)))
+            .when(!child, |this| this.mx(px(8.)))
             .rounded(px(if theme.liquid { 16. } else if theme.fluent { theme.radius } else { 6. }))
             .text_size(px(13.))
             .cursor_pointer()
@@ -522,8 +530,9 @@ impl MainWindow {
             .when(active && !theme.fluent, |this| this.bg(theme.accent_soft))
             // Windows 11: a quiet highlight and a short accent bar, as in Settings.
             .when(active && theme.fluent, |this| {
+                let (left, top) = if child { (TREE_LINE_X - TREE_INDENT, 6.) } else { (0., 10.) };
                 this.bg(theme.hover).child(
-                    div().absolute().left_0().top(px(10.)).w(px(3.)).h(px(12.)).rounded_full().bg(theme.accent),
+                    div().absolute().left(px(left)).top(px(top)).w(px(3.)).h(px(if child { 16. } else { 12. })).rounded_full().bg(theme.accent),
                 )
             })
             .when(!active, |this| this.hover(|s| s.bg(theme.hover)))
@@ -580,6 +589,7 @@ impl MainWindow {
                 .into_any_element(),
         );
         if self.categories_open {
+            let mut children: Vec<AnyElement> = Vec::new();
             for category in categories {
                 let filter = Filter::Category(category.clone());
                 let n = count(&filter);
@@ -592,11 +602,33 @@ impl MainWindow {
                     GENERAL => "cat-general",
                     _ => "cat-custom",
                 };
-                items.push(
+                children.push(
                     self.sidebar_item(key, category.clone().into(), Icon::for_category(&category), filter, n, true, theme, cx)
                         .into_any_element(),
                 );
             }
+            items.push(
+                div()
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    // The tree's guide line, from under All Downloads to the last category.
+                    .when(theme.fluent, |this| {
+                        this.child(
+                            div()
+                                .absolute()
+                                .left(px(TREE_LINE_X))
+                                .top(px(-4.))
+                                .bottom(px(14.))
+                                .w(px(2.))
+                                .rounded_full()
+                                .bg(theme.accent.opacity(0.3)),
+                        )
+                    })
+                    .children(children)
+                    .into_any_element(),
+            );
         }
         items.push(self.sidebar_item("unfinished", "Unfinished".into(), Icon::Clock, Filter::Unfinished, count(&Filter::Unfinished), false, theme, cx).into_any_element());
         items.push(self.sidebar_item("finished", "Finished".into(), Icon::CheckCircle, Filter::Finished, count(&Filter::Finished), false, theme, cx).into_any_element());

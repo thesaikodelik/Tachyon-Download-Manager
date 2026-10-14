@@ -24,6 +24,8 @@ use crate::widgets::{
 
 /// Width of the captions to the left of the fields on the Windows 11 layout.
 const LABEL_WIDTH: f32 = 74.;
+/// Width of the category drop-down and of the list it opens.
+const CATEGORY_PICKER_WIDTH: f32 = 200.;
 
 pub enum AddPrefill {
     /// Use the clipboard if it holds a link.
@@ -642,27 +644,15 @@ impl AddDialog {
         div()
             .flex()
             .flex_col()
-            .child(
-                dropdown_trigger(
-                    "category",
-                    Some(Icon::for_category(&self.category)),
-                    self.category.clone(),
-                    self.category_menu,
-                    theme,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.category_menu = !this.category_menu;
-                    cx.notify();
-                })),
-            )
+            // As in Windows 11, the list opens over the drop-down itself, aligned with
+            // its top and exactly as wide, so it never sits half on and half off it.
             .when(self.category_menu, |this| {
                 this.child(
                     deferred(
                         anchored().snap_to_window_with_margin(px(8.)).child(
                             menu_panel(&theme_copy)
                                 .id("category-menu")
-                                .mt(px(4.))
-                                .w(px(250.))
+                                .w(px(CATEGORY_PICKER_WIDTH))
                                 .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                                     this.category_menu = false;
                                     cx.notify();
@@ -683,7 +673,21 @@ impl AddDialog {
                     .with_priority(1),
                 )
             })
+            .child(
+                dropdown_trigger(
+                    "category",
+                    Some(Icon::for_category(&self.category)),
+                    self.category.clone(),
+                    self.category_menu,
+                    theme,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.category_menu = !this.category_menu;
+                    cx.notify();
+                })),
+            )
     }
+
 
     /// The address, with whether it can be resumed at its end. A long address fades
     /// out under the badge instead of running into it.
@@ -694,6 +698,9 @@ impl AddDialog {
             None => None,
         };
         let field_bg = theme.input_readonly;
+        // Pale tinted badges fade into light glass; there they are solid instead.
+        let solid_badges = theme.liquid && !theme.dark;
+        let white: gpui::Hsla = gpui::white();
         div().relative().child(self.url_display.clone()).when_some(badge, |this, (glyph, label, color)| {
             this.child(
                 div()
@@ -718,11 +725,11 @@ impl AddDialog {
                                 .px(px(7.))
                                 .py(px(1.))
                                 .rounded_full()
-                                .bg(color.opacity(0.12))
+                                .bg(if solid_badges { color } else { color.opacity(0.12) })
                                 .text_size(px(11.))
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(color)
-                                .child(icon(glyph, px(11.), color))
+                                .text_color(if solid_badges { white } else { color })
+                                .child(icon(glyph, px(11.), if solid_badges { white } else { color }))
                                 .child(label),
                         ),
                     ),
@@ -760,8 +767,13 @@ impl AddDialog {
                     .px(px(8.))
                     .py(px(1.))
                     .rounded(px(theme.radius))
-                    .bg(theme.accent_soft)
-                    .text_color(theme.accent)
+                    .map(|this| {
+                        if theme.liquid && !theme.dark {
+                            this.bg(theme.icon).text_color(gpui::white())
+                        } else {
+                            this.bg(theme.accent_soft).text_color(theme.accent)
+                        }
+                    })
                     .text_size(px(11.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(extension),
@@ -791,7 +803,7 @@ impl AddDialog {
                             .child(field_row_inline(
                                 "Category",
                                 LABEL_WIDTH,
-                                div().w(px(200.)).child(self.render_category_picker(theme, cx)),
+                                div().w(px(CATEGORY_PICKER_WIDTH)).child(self.render_category_picker(theme, cx)),
                                 theme,
                             ))
                             .child(field_row_inline(

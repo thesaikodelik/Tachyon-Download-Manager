@@ -569,7 +569,8 @@ pub fn menu_panel(theme: &Theme) -> gpui::Div {
         .flex()
         .flex_col()
         .p(px(4.))
-        .rounded(px(theme.radius_large))
+        // Matches the capsule drop-downs it opens from in Liquid Glass.
+        .rounded(px(if theme.liquid { theme.control_height / 2. + 4. } else { theme.radius_large }))
         .border_1()
         .border_color(theme.border_strong)
         .bg(popup_bg(theme))
@@ -593,7 +594,7 @@ pub fn menu_item(
         .gap(px(8.))
         .h(px(30.))
         .px(px(10.))
-        .rounded(px(theme.radius))
+        .rounded(px(if theme.liquid { 15. } else { theme.radius }))
         .cursor_pointer()
         .text_size(px(13.))
         .when(selected, |this| this.bg(theme.hover))
