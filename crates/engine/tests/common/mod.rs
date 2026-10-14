@@ -26,6 +26,9 @@ pub struct ServerConfig {
     pub etag: &'static str,
     /// Answer 429 (Retry-After: 1) while more than this many requests are in flight.
     pub max_concurrent: usize,
+    pub last_modified: Option<&'static str>,
+    /// Answer 401 unless the request carries exactly this Authorization header.
+    pub require_auth: Option<&'static str>,
 }
 
 impl Default for ServerConfig {
@@ -39,6 +42,8 @@ impl Default for ServerConfig {
             status_override: None,
             etag: "\"v1\"",
             max_concurrent: usize::MAX,
+            last_modified: None,
+            require_auth: None,
         }
     }
 }
@@ -139,6 +144,18 @@ async fn serve_connection(
         stats.in_flight.fetch_add(1, Ordering::SeqCst);
         let _in_flight = InFlight(&stats.in_flight);
 
+        if let Some(expected) = cfg.require_auth {
+            let sent = head.lines().find_map(|l| {
+                let (name, value) = l.split_once(':')?;
+                name.eq_ignore_ascii_case("authorization").then(|| value.trim().to_string())
+            });
+            if sent.as_deref() != Some(expected) {
+                let msg = "HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"t\"\r\nContent-Length: 0\r\n\r\n";
+                stream.write_all(msg.as_bytes()).await?;
+                continue;
+            }
+        }
+
         if let Some(status) = cfg.status_override {
             let msg = format!("HTTP/1.1 {status} Nope\r\nContent-Length: 0\r\n\r\n");
             stream.write_all(msg.as_bytes()).await?;
@@ -176,6 +193,9 @@ async fn serve_connection(
         let mut headers = format!("HTTP/1.1 {status}\r\nContent-Type: application/octet-stream\r\nETag: {}\r\n", cfg.etag);
         if cfg.ranges {
             headers.push_str("Accept-Ranges: bytes\r\n");
+        }
+        if let Some(modified) = cfg.last_modified {
+            headers.push_str(&format!("Last-Modified: {modified}\r\n"));
         }
         if status.starts_with("206") {
             headers.push_str(&format!("Content-Range: bytes {start}-{}/{}\r\n", end - 1, body.len()));

@@ -22,7 +22,8 @@ const MAX_HEAD: usize = 16 * 1024;
 const MAX_BODY: usize = 256 * 1024;
 const EXTENSION_ORIGINS: [&str; 3] = ["chrome-extension://", "moz-extension://", "safari-web-extension://"];
 
-pub(crate) type CaptureSink = Arc<dyn Fn(AddRequest) + Send + Sync>;
+/// Takes a captured download; returns false to leave it to the browser.
+pub(crate) type CaptureSink = Arc<dyn Fn(AddRequest) -> bool + Send + Sync>;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -176,7 +177,7 @@ async fn handle(mut stream: TcpStream, port: u16, sink: CaptureSink) {
                 respond(&mut stream, "422 Unprocessable Entity", r#"{"error":"unsupported url"}"#).await;
                 return;
             }
-            sink(AddRequest {
+            let accepted = sink(AddRequest {
                 request: RequestSpec {
                     url: capture.url,
                     referer: capture.referrer.filter(|r| !r.is_empty()),
@@ -189,7 +190,12 @@ async fn handle(mut stream: TcpStream, port: u16, sink: CaptureSink) {
                 start: true,
                 ..Default::default()
             });
-            respond(&mut stream, "200 OK", r#"{"ok":true}"#).await;
+            if accepted {
+                respond(&mut stream, "200 OK", r#"{"ok":true}"#).await;
+            } else {
+                // The extension then lets the browser download it.
+                respond(&mut stream, "409 Conflict", r#"{"error":"excluded site"}"#).await;
+            }
         }
         _ => respond(&mut stream, "404 Not Found", r#"{"error":"not found"}"#).await,
     }

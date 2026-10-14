@@ -50,6 +50,8 @@ pub(crate) struct TaskInput {
     pub etag: Option<String>,
     pub last_modified: Option<String>,
     pub segments: Vec<SegmentState>,
+    /// Folder for the unfinished file; `directory` when None.
+    pub part_dir: Option<PathBuf>,
 }
 
 pub(crate) struct TaskEnv {
@@ -178,9 +180,12 @@ pub(crate) async fn run(input: TaskInput, shared: Arc<TaskShared>, env: TaskEnv)
     }
 }
 
-fn validators_match(input: &TaskInput, info: &ProbeInfo) -> bool {
+fn validators_match(input: &TaskInput, info: &ProbeInfo, ignore_modified: bool) -> bool {
     if let (Some(a), Some(b)) = (&input.etag, &info.etag) {
         return a == b;
+    }
+    if ignore_modified {
+        return true;
     }
     match (&input.last_modified, &info.last_modified) {
         (Some(a), Some(b)) => a == b,
@@ -252,7 +257,7 @@ async fn run_inner(
         && info.resumable
         && probe.body_start == probe_from
         && info.total == input.size
-        && validators_match(input, &info);
+        && validators_match(input, &info, env.settings.ignore_modified_on_resume);
     if has_progress && !continuing {
         log::warn!(
             "download {}: the file changed on the server or lost resume support; restarting",
@@ -284,7 +289,9 @@ async fn run_inner(
     let first_at = if continuing { probe.body_start } else { 0 };
 
     std::fs::create_dir_all(&input.directory)?;
-    let part = part_path(&input.directory, &file_name);
+    let part_dir = input.part_dir.as_deref().unwrap_or(&input.directory);
+    std::fs::create_dir_all(part_dir)?;
+    let part = part_path(part_dir, &file_name);
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -317,7 +324,13 @@ async fn run_inner(
         read_timeout: Duration::from_secs(settings.read_timeout_secs),
         size_known: info.total.is_some(),
         resumable: info.resumable,
-        cap: AtomicUsize::new(if splittable { settings.max_connections.max(1) as usize } else { 1 }),
+        cap: AtomicUsize::new(if splittable {
+            // A per-server exception (Options → Connection) overrides the default.
+            let host = url::Url::parse(&info.final_url).ok().and_then(|u| u.host_str().map(str::to_string));
+            settings.connections_for(host.as_deref().unwrap_or_default()).max(1) as usize
+        } else {
+            1
+        }),
         alive: AtomicUsize::new(0),
         last_throttle: Mutex::new(None),
     });
@@ -410,11 +423,37 @@ async fn run_inner(
     drop(ctx);
 
     let file_name = final_name(&input.directory, &file_name);
-    std::fs::rename(&part, input.directory.join(&file_name))?;
+    let target = input.directory.join(&file_name);
+    move_file(&part, &target)?;
+    if settings.use_server_file_time
+        && let Some(modified) = info.last_modified.as_deref().and_then(parse_http_date)
+        && let Err(e) = std::fs::File::options().write(true).open(&target).and_then(|f| f.set_modified(modified))
+    {
+        log::warn!("could not set the file time of {}: {e}", target.display());
+    }
     Ok(TaskOutcome::Completed {
         file_name,
         size: total,
     })
+}
+
+/// Renames, or copies and deletes when the temporary folder is on another drive.
+fn move_file(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    match std::fs::rename(from, to) {
+        Ok(()) => Ok(()),
+        Err(_) if from.parent() != to.parent() => {
+            std::fs::copy(from, to)?;
+            std::fs::remove_file(from)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Parses an HTTP date such as `Sun, 06 Nov 1994 08:49:37 GMT`.
+fn parse_http_date(text: &str) -> Option<std::time::SystemTime> {
+    let date = chrono::DateTime::parse_from_rfc2822(text.trim()).ok()?;
+    let secs = u64::try_from(date.timestamp()).ok()?;
+    Some(std::time::UNIX_EPOCH + Duration::from_secs(secs))
 }
 
 /// Average speed over a sliding window of recent samples.

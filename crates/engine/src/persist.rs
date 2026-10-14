@@ -38,6 +38,16 @@ pub(crate) struct DownloadRecord {
     /// Bytes per second; 0 means unlimited.
     pub speed_limit: u64,
     pub completion: CompletionOptions,
+    /// Folder of the unfinished file when it isn't `directory` (the temporary
+    /// folder set in Options when the download was added).
+    pub part_dir: Option<PathBuf>,
+}
+
+impl DownloadRecord {
+    /// Where the unfinished file is.
+    pub fn part_file(&self) -> PathBuf {
+        crate::fsutil::part_path(self.part_dir.as_deref().unwrap_or(&self.directory), &self.file_name)
+    }
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -81,11 +91,20 @@ pub(crate) fn save_state(dir: &Path, state: &StateFile) -> std::io::Result<()> {
 }
 
 pub(crate) fn load_settings(dir: &Path) -> Settings {
-    std::fs::read(dir.join(SETTINGS_FILE))
+    let Some(bytes) = std::fs::read(dir.join(SETTINGS_FILE)).ok() else {
+        return Settings::default().sanitized();
+    };
+    let Ok(mut settings) = serde_json::from_slice::<Settings>(&bytes) else {
+        return Settings::default().sanitized();
+    };
+    // Before proxy modes, a proxy URL alone meant "use this proxy".
+    let has_mode = serde_json::from_slice::<serde_json::Value>(&bytes)
         .ok()
-        .and_then(|bytes| serde_json::from_slice::<Settings>(&bytes).ok())
-        .unwrap_or_default()
-        .sanitized()
+        .is_some_and(|v| v.get("proxy_mode").is_some());
+    if !has_mode && !settings.proxy.trim().is_empty() {
+        settings.proxy_mode = crate::types::ProxyMode::Manual;
+    }
+    settings.sanitized()
 }
 
 pub(crate) fn save_settings(dir: &Path, settings: &Settings) -> std::io::Result<()> {

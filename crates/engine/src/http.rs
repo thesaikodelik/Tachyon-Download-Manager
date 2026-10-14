@@ -5,7 +5,7 @@ use reqwest::header::{self, HeaderMap, HeaderValue};
 use reqwest::{Client, Response, StatusCode};
 
 use crate::error::EngineError;
-use crate::types::{ProbeInfo, RequestSpec, Settings};
+use crate::types::{ProbeInfo, ProxyMode, RequestSpec, Settings};
 
 /// Builds the shared HTTP client.
 ///
@@ -19,11 +19,22 @@ pub fn build_client(settings: &Settings) -> Result<Client, EngineError> {
         .pool_idle_timeout(Duration::from_secs(90))
         .redirect(reqwest::redirect::Policy::limited(10))
         .tcp_nodelay(true);
-    let proxy = settings.proxy.trim();
-    if !proxy.is_empty() {
-        let proxy = reqwest::Proxy::all(proxy)
-            .map_err(|e| EngineError::Config(format!("invalid proxy: {e}")))?;
-        builder = builder.proxy(proxy);
+    match settings.proxy_mode {
+        // reqwest reads the system proxy itself.
+        ProxyMode::System => {}
+        ProxyMode::None => builder = builder.no_proxy(),
+        ProxyMode::Manual => {
+            let address = settings.proxy.trim();
+            if address.is_empty() {
+                return Err(EngineError::Config("enter a proxy address or choose another proxy option".into()));
+            }
+            let mut proxy = reqwest::Proxy::all(address)
+                .map_err(|e| EngineError::Config(format!("invalid proxy: {e}")))?;
+            if !settings.proxy_username.is_empty() {
+                proxy = proxy.basic_auth(&settings.proxy_username, &settings.proxy_password);
+            }
+            builder = builder.proxy(proxy);
+        }
     }
     builder
         .build()

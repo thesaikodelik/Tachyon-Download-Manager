@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::categories::{classify, folder_for};
 use crate::error::EngineError;
-use crate::fsutil::{part_path, unique_name};
+use crate::fsutil::unique_name;
 use crate::http;
 use crate::integration;
 use crate::limiter::RateLimiter;
@@ -139,6 +139,10 @@ impl Engine {
 
     /// Asks the server about `spec` without downloading anything.
     pub fn probe(&self, spec: RequestSpec) -> impl Future<Output = Result<ProbeInfo, EngineError>> + Send + 'static {
+        let mut spec = spec;
+        if spec.credentials.is_none() {
+            spec.credentials = self.inner.settings.read().login_for(&spec.url);
+        }
         let (tx, rx) = tokio::sync::oneshot::channel();
         let client = self.inner.client.read().clone();
         let timeout = Duration::from_secs(self.inner.settings.read().connect_timeout_secs + 10);
@@ -179,6 +183,22 @@ impl Engine {
         self.inner.add(request)
     }
 
+    /// A download already in the list for `url` (as entered or after redirects).
+    pub fn find_by_url(&self, url: &str) -> Option<DownloadSnapshot> {
+        let normalize = |u: &str| url::Url::parse(u.trim()).map(|u| u.to_string()).unwrap_or_else(|_| u.trim().to_string());
+        let wanted = normalize(url);
+        let id = {
+            let state = self.inner.state.lock();
+            state
+                .records
+                .values()
+                .filter(|r| normalize(&r.spec.url) == wanted || r.final_url.as_deref().map(normalize) == Some(wanted.clone()))
+                .max_by_key(|r| r.added_at)
+                .map(|r| r.id)
+        };
+        id.and_then(|id| self.get(id))
+    }
+
     /// Starts or resumes a download.
     pub fn start(&self, id: DownloadId) -> Result<(), EngineError> {
         let mut state = self.inner.state.lock();
@@ -212,7 +232,7 @@ impl Engine {
             let Some(record) = state.records.remove(id) else {
                 continue;
             };
-            let mut files = vec![part_path(&record.directory, &record.file_name)];
+            let mut files = vec![record.part_file()];
             if delete_files && record.status == DownloadStatus::Completed {
                 files.push(record.directory.join(&record.file_name));
             }
@@ -247,7 +267,7 @@ impl Engine {
             return Err(EngineError::Config("stop the download first".into()));
         }
         let record = state.records.get_mut(&id).ok_or(EngineError::NotFound)?;
-        let _ = std::fs::remove_file(part_path(&record.directory, &record.file_name));
+        let _ = std::fs::remove_file(record.part_file());
         record.segments.clear();
         record.downloaded = 0;
         record.status = DownloadStatus::Stopped;
@@ -529,6 +549,9 @@ impl Inner {
         spec.url = parsed.to_string();
 
         let settings = self.settings.read().clone();
+        if spec.credentials.is_none() {
+            spec.credentials = settings.login_for(&spec.url);
+        }
         let probed = request.probed.clone();
         let user_name = request
             .file_name
@@ -573,6 +596,7 @@ impl Inner {
                 show_dialog: settings.show_complete_dialog,
                 ..Default::default()
             },
+            part_dir: settings.temp_dir.clone().filter(|d| !d.as_os_str().is_empty()),
             ..Default::default()
         };
         if let Some(info) = probed {
@@ -619,6 +643,7 @@ impl Inner {
             etag: record.etag.clone(),
             last_modified: record.last_modified.clone(),
             segments: record.segments.clone(),
+            part_dir: record.part_dir.clone(),
         };
         let shared = Arc::new(TaskShared::new(record.speed_limit));
         state.tasks.insert(id, shared.clone());
@@ -836,7 +861,10 @@ impl Inner {
         let cancel = CancellationToken::new();
         let weak = Arc::downgrade(self);
         let sink: integration::CaptureSink = Arc::new(move |request: AddRequest| {
-            let Some(inner) = weak.upgrade() else { return };
+            let Some(inner) = weak.upgrade() else { return false };
+            if inner.settings.read().is_excluded_site(&request.request.url) {
+                return false;
+            }
             if inner.settings.read().start_captured_immediately {
                 if let Err(e) = inner.add(request) {
                     log::warn!("captured download rejected: {e}");
@@ -844,6 +872,7 @@ impl Inner {
             } else {
                 inner.push_event(EngineEvent::Captured(Box::new(request)));
             }
+            true
         });
         self.handle.spawn(integration::serve(port, cancel.clone(), sink));
         *current = Some((port, cancel));

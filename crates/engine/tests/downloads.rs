@@ -273,3 +273,86 @@ fn removing_a_running_download_deletes_its_partial_file() {
     }
     assert!(!part.exists());
 }
+
+#[test]
+fn temporary_folder_holds_the_unfinished_file() {
+    let rt = server_runtime();
+    let server = rt.block_on(TestServer::start(ServerConfig { size: 1 << 20, throttle: 1 << 20, ..Default::default() }));
+    let dir = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let engine = open_engine(dir.path(), |s| s.temp_dir = Some(temp.path().to_path_buf()));
+    let id = engine.add(request(&server.url, true)).unwrap();
+    // While downloading, the part file is in the temporary folder only.
+    wait_for(&engine, id, Duration::from_secs(10), |d| d.downloaded > 0);
+    let part = format!("test file.bin{PART_SUFFIX}");
+    assert!(temp.path().join(&part).exists());
+    let snap = wait_finished(&engine, id);
+    assert_eq!(snap.status, DownloadStatus::Completed, "{:?}", snap.error);
+    assert_eq!(read(snap.path()), *server.body);
+    assert!(!temp.path().join(&part).exists());
+    assert!(!snap.directory.join(&part).exists());
+}
+
+#[test]
+fn finished_file_gets_the_server_modification_time() {
+    let rt = server_runtime();
+    let server = rt.block_on(TestServer::start(ServerConfig {
+        last_modified: Some("Sun, 06 Nov 1994 08:49:37 GMT"),
+        ..Default::default()
+    }));
+    let dir = tempfile::tempdir().unwrap();
+    let engine = open_engine(dir.path(), |s| s.use_server_file_time = true);
+    let id = engine.add(request(&server.url, true)).unwrap();
+    let snap = wait_finished(&engine, id);
+    assert_eq!(snap.status, DownloadStatus::Completed, "{:?}", snap.error);
+    let modified = std::fs::metadata(snap.path()).unwrap().modified().unwrap();
+    let secs = modified.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    assert_eq!(secs, 784_111_777);
+}
+
+#[test]
+fn saved_site_login_is_used() {
+    let rt = server_runtime();
+    let server = rt.block_on(TestServer::start(ServerConfig {
+        require_auth: Some("Basic dXNlcjpwYXNz"), // user:pass
+        ..Default::default()
+    }));
+    let dir = tempfile::tempdir().unwrap();
+    let engine = open_engine(dir.path(), |s| {
+        s.site_logins = vec![tachyon_engine::SiteLogin {
+            site: "127.0.0.1".into(),
+            username: "user".into(),
+            password: "pass".into(),
+        }]
+    });
+    let id = engine.add(request(&server.url, true)).unwrap();
+    let snap = wait_finished(&engine, id);
+    assert_eq!(snap.status, DownloadStatus::Completed, "{:?}", snap.error);
+    assert_eq!(read(snap.path()), *server.body);
+}
+
+#[test]
+fn server_exception_limits_connections() {
+    let rt = server_runtime();
+    let server = rt.block_on(TestServer::start(ServerConfig { size: 4 << 20, throttle: 4 << 20, ..Default::default() }));
+    let dir = tempfile::tempdir().unwrap();
+    let engine = open_engine(dir.path(), |s| {
+        s.max_connections = 8;
+        s.server_limits = vec![tachyon_engine::ServerLimit { server: "127.0.0.1".into(), max_connections: 1 }];
+    });
+    let id = engine.add(request(&server.url, true)).unwrap();
+    let snap = wait_finished(&engine, id);
+    assert_eq!(snap.status, DownloadStatus::Completed, "{:?}", snap.error);
+    assert_eq!(server.stats.max_active.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn finds_downloads_already_in_the_list() {
+    let rt = server_runtime();
+    let server = rt.block_on(TestServer::start(ServerConfig::default()));
+    let dir = tempfile::tempdir().unwrap();
+    let engine = open_engine(dir.path(), |_| {});
+    assert!(engine.find_by_url(&server.url).is_none());
+    let id = engine.add(request(&server.url, false)).unwrap();
+    assert_eq!(engine.find_by_url(&server.url).map(|d| d.id), Some(id));
+}
