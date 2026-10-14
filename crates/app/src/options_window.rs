@@ -880,7 +880,13 @@ impl OptionsWindow {
                         this.tab = ix;
                         cx.notify();
                     }))
-                    .child(icon(*section_icon, px(15.), if active || theme.fluent { theme.accent } else { theme.muted }))
+                    .child(icon(*section_icon, px(15.), if theme.fluent {
+                        theme.icon
+                    } else if active {
+                        theme.accent
+                    } else {
+                        theme.muted
+                    }))
                     .child(*label)
             }))
     }

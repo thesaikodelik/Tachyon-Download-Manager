@@ -68,7 +68,7 @@ pub fn title_bar(title: impl Into<SharedString>, maximizable: bool, window: &Win
                 .gap(px(10.))
                 .pl(px(12.))
                 .window_control_area(WindowControlArea::Drag)
-                .child(icon(Icon::Bolt, px(16.), theme.accent))
+                .child(icon(Icon::Bolt, px(16.), theme.icon))
                 .child(
                     div()
                         .text_size(px(12.))

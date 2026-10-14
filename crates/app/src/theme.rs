@@ -80,6 +80,9 @@ pub struct Theme {
     pub muted: Hsla,
     pub faint: Hsla,
     pub accent: Hsla,
+    /// Icons in the Windows 11 styles: the accent, or a deeper shade of it where
+    /// the plain accent would melt into a bright, see-through background.
+    pub icon: Hsla,
     pub accent_hover: Hsla,
     pub accent_soft: Hsla,
     pub on_accent: Hsla,
@@ -128,6 +131,7 @@ impl Theme {
             muted: c(0x6b6b72),
             faint: c(0xa1a1a8),
             accent: c(0x1f6feb),
+            icon: c(0x1f6feb),
             accent_hover: c(0x1a5fd0),
             accent_soft: ca(0x1f6feb24),
             on_accent: c(0xffffff),
@@ -167,6 +171,7 @@ impl Theme {
             muted: c(0xa0a0a8),
             faint: c(0x6c6c74),
             accent: c(0x3b82f6),
+            icon: c(0x3b82f6),
             accent_hover: c(0x5593f7),
             accent_soft: ca(0x3b82f633),
             on_accent: c(0xffffff),
@@ -195,6 +200,7 @@ impl Theme {
     /// and outlined capsule controls with only a whisper of fill.
     fn liquid(dark: bool) -> Self {
         let accent = accent_color(dark).unwrap_or(c(if dark { 0x60cdff } else { 0x005fb8 }));
+        let deep = accent_shade(6).unwrap_or(c(0x003e92));
         let (fg, bg) = if dark { (0xffffff00_u32, 0x000000_u32) } else { (0x00000000_u32, 0xffffff_u32) };
         // Foreground (white on dark, black on light) at an alpha.
         let ink = |alpha: u32| ca(fg | alpha);
@@ -213,6 +219,7 @@ impl Theme {
             muted: ink(if dark { 0xb8 } else { 0x99 }),
             faint: ink(if dark { 0x73 } else { 0x66 }),
             accent,
+            icon: if dark { accent } else { deep },
             accent_hover: accent.opacity(0.9),
             accent_soft: accent.opacity(0.2),
             on_accent: c(if dark { 0x000000 } else { 0xffffff }),
@@ -260,6 +267,7 @@ impl Theme {
             muted: ca(0x0000009b),
             faint: ca(0x00000072),
             accent,
+            icon: accent,
             accent_hover: accent.opacity(0.9),
             accent_soft: accent.opacity(0.12),
             on_accent: c(0xffffff),
@@ -312,6 +320,7 @@ impl Theme {
             muted: ca(0xffffffc8),
             faint: ca(0xffffff8b),
             accent,
+            icon: accent,
             accent_hover: accent.opacity(0.9),
             accent_soft: accent.opacity(0.16),
             on_accent: c(0x000000),
@@ -374,6 +383,20 @@ fn accent_color(dark: bool) -> Option<Hsla> {
 
 #[cfg(not(windows))]
 fn accent_color(_: bool) -> Option<Hsla> {
+    None
+}
+
+/// A shade from the user's accent palette, 0 (lightest) to 7 (darkest).
+#[cfg(windows)]
+fn accent_shade(index: usize) -> Option<Hsla> {
+    use std::sync::OnceLock;
+    static PALETTE: OnceLock<Option<[u32; 8]>> = OnceLock::new();
+    let palette = (*PALETTE.get_or_init(read_accent_palette))?;
+    palette.get(index).map(|rgb| c(*rgb))
+}
+
+#[cfg(not(windows))]
+fn accent_shade(_: usize) -> Option<Hsla> {
     None
 }
 

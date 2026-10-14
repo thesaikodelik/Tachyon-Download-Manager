@@ -195,7 +195,7 @@ impl RenderOnce for ToolbarButton {
         let color = if self.disabled {
             theme.faint
         } else {
-            self.tint.unwrap_or(if theme.fluent { theme.accent } else { theme.text })
+            self.tint.unwrap_or(if theme.fluent { theme.icon } else { theme.text })
         };
         let handler = self.on_click.clone();
         let disabled = self.disabled;

@@ -398,14 +398,14 @@ impl MainWindow {
             .when(!theme.fluent, |this| this.border_b_1().border_color(theme.border))
             .child(
                 ToolbarButton::new("tb-add", "Add URL", Icon::Add)
-                    .tint(theme.accent)
+                    .tint(if theme.fluent { theme.icon } else { theme.accent })
                     .tooltip(format!("Add a new download ({})", format::shortcut("N")))
                     .on_click(|_, _, cx| app::open_add_dialog(AddPrefill::FromClipboard, cx)),
             )
             .child(divider())
             .child(
                 ToolbarButton::new("tb-resume", "Resume", Icon::Play)
-                    .tint(if theme.fluent { theme.accent } else { theme.success })
+                    .tint(if theme.fluent { theme.icon } else { theme.success })
                     .disabled(!can_resume)
                     .on_click(cx.listener(|this, _, _, cx| this.resume(cx))),
             )
@@ -467,8 +467,8 @@ impl MainWindow {
                     .items_center()
                     .gap(px(6.))
                     .pr(px(6.))
-                    .text_color(theme.accent)
-                    .child(icon(Icon::Bolt, px(18.), theme.accent))
+                    .text_color(theme.icon)
+                    .child(icon(Icon::Bolt, px(18.), theme.icon))
                     .child(
                         div()
                             .text_size(px(15.))
@@ -516,7 +516,13 @@ impl MainWindow {
             .when(!active, |this| this.hover(|s| s.bg(theme.hover)))
             .on_click(cx.listener(move |this, _, _, cx| this.set_filter(filter.clone(), cx)))
             // Windows 11 styles: icons in the accent colour, set apart from the text.
-            .child(icon(item_icon, px(15.), if active || theme.fluent { theme.accent } else { theme.muted }))
+            .child(icon(item_icon, px(15.), if theme.fluent {
+                theme.icon
+            } else if active {
+                theme.accent
+            } else {
+                theme.muted
+            }))
             .child(div().flex_1().min_w_0().child(truncated(label)))
             .when(count > 0, |this| {
                 this.child(div().text_size(px(11.)).text_color(theme.muted).child(count.to_string()))
@@ -1075,7 +1081,7 @@ impl Render for AboutWindow {
             .gap(px(8.))
             .bg(theme.bg)
             .text_color(theme.text)
-            .child(icon(Icon::Bolt, px(48.), theme.accent))
+            .child(icon(Icon::Bolt, px(48.), theme.icon))
             .child(div().text_size(px(18.)).font_weight(FontWeight::SEMIBOLD).child("Tachyon Download Manager"))
             .child(div().text_size(px(12.)).text_color(theme.muted).child(format!("Version {}", env!("CARGO_PKG_VERSION"))))
             .child(
