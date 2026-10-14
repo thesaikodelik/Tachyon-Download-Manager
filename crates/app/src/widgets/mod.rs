@@ -211,8 +211,6 @@ impl RenderOnce for ToolbarButton {
             .h(px(54.))
             .px(px(6.))
             .rounded(px(theme.radius_large))
-            // Liquid Glass: outlined glass tiles.
-            .when(theme.liquid && !disabled, |this| this.border_1().border_color(theme.border).bg(theme.button))
             .text_size(px(11.))
             .text_color(if disabled { theme.faint } else { theme.text })
             .when(!disabled, |this| {
