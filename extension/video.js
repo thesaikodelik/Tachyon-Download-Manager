@@ -83,7 +83,7 @@
         pointer-events: auto;
       }
       .btn.shown { opacity: 0.88; transform: none; }
-      .btn.open { opacity: 1; max-width: 220px; }
+      .btn.open { opacity: 1; max-width: 280px; }
       .btn svg { flex: none; width: 15px; height: 15px; }
       .label { padding: 0 4px 0 6px; }
       .menu {
@@ -234,7 +234,7 @@
       // A blob: source is a stream assembled from pieces; otherwise the file was
       // most likely loaded before the extension started watching this tab.
       const src = video?.currentSrc || "";
-      label.textContent = src.startsWith("blob:") ? "Streamed video – not supported yet" : "Reload the page to find it";
+      label.textContent = src.startsWith("blob:") ? "Played in pieces – not supported yet" : "Reload the page to find it";
     } else if (candidates.length === 1) {
       label.textContent = formatSize(candidates[0].size) || "Download";
     } else {
