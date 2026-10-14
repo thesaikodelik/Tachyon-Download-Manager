@@ -23,14 +23,8 @@ pub fn supports_backdrops() -> bool {
 }
 
 /// Matches the native title bar to the app's light/dark appearance and applies
-/// `backdrop` if the system supports it. Returns whether a backdrop is active, in
-/// which case the window's content should leave its background translucent.
-pub fn style_window(window: &mut Window, backdrop: Backdrop, dark: bool) -> bool {
-    imp::style_window(window, backdrop, dark)
-}
-
-/// Calls [`style_window`] only when `backdrop` or `dark` changed for this window,
-/// so it is cheap enough to run on every render.
+/// `backdrop` if the system supports it. Only touches the window when `backdrop`
+/// or `dark` changed for it, so it is cheap enough to run on every render.
 pub fn sync_chrome(window: &mut Window, backdrop: Backdrop, dark: bool) {
     imp::sync_chrome(window, backdrop, dark)
 }
@@ -59,6 +53,38 @@ pub fn native_handle(window: &Window) -> Option<usize> {
 pub fn drag_file_out(handle: usize, path: &std::path::Path) -> Result<DragOutcome, String> {
     imp::drag_file_out(handle, path)
 }
+
+/// `path` as the shell expects it: absolute, with backslashes. Shell APIs reject
+/// forward slashes ("The parameter is incorrect"), which users may type in paths.
+pub fn shell_path(path: &std::path::Path) -> std::path::PathBuf {
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    if cfg!(windows) {
+        std::path::PathBuf::from(absolute.to_string_lossy().replace('/', "\\"))
+    } else {
+        absolute
+    }
+}
+
+/// Makes sure only one Tachyon runs per profile (`data_dir`), as two engines on the
+/// same download list would overwrite each other's state. Returns false when another
+/// instance already runs; it has then been asked to show its window, and this one
+/// should exit. Elsewhere this always returns true.
+pub fn claim_single_instance(data_dir: &std::path::Path) -> bool {
+    imp::claim_single_instance(data_dir)
+}
+
+/// Whether another launch asked this instance to show its window since the last call.
+pub fn take_show_request() -> bool {
+    imp::take_show_request()
+}
+
+/// Starts Tachyon in the notification area when the user signs in (or stops doing so).
+pub fn set_start_with_system(enabled: bool) -> Result<(), String> {
+    imp::set_start_with_system(enabled)
+}
+
+/// Command-line flag used when Windows starts Tachyon at sign-in.
+pub const START_IN_TRAY_FLAG: &str = "--tray";
 
 /// Shows Windows' "Open with" chooser for `path`.
 pub fn open_with(path: &std::path::Path) {
@@ -200,6 +226,7 @@ mod imp {
         // HGLOBAL is handed to the data object, which frees it.
         unsafe {
             // The shell's own data object, so drops behave exactly as from Explorer.
+            let path = &super::shell_path(path);
             let item: IShellItem = SHCreateItemFromParsingName(&HSTRING::from(path.as_os_str()), None).map_err(err)?;
             let data: IDataObject = item.BindToHandler(None, &BHID_DataObject).map_err(err)?;
 
@@ -243,11 +270,91 @@ mod imp {
         }
     }
 
+    /// Name of a per-profile kernel object, so the dev profile and the real one
+    /// never take each other for a second instance.
+    fn object_name(kind: &str, data_dir: &std::path::Path) -> Vec<u16> {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        data_dir.to_string_lossy().to_lowercase().hash(&mut hasher);
+        format!("Local\\TachyonDownloadManager-{kind}-{:016x}\0", hasher.finish()).encode_utf16().collect()
+    }
+
+    static SHOW_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    pub fn claim_single_instance(data_dir: &std::path::Path) -> bool {
+        use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
+        use windows_sys::Win32::System::Threading::{CreateEventW, CreateMutexW, INFINITE, SetEvent, WaitForSingleObject};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ASFW_ANY, AllowSetForegroundWindow};
+
+        let mutex_name = object_name("instance", data_dir);
+        let event_name = object_name("show", data_dir);
+        // SAFETY: the names are NUL-terminated; the handles live as long as the process.
+        unsafe {
+            let mutex = CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr());
+            let first = !mutex.is_null() && GetLastError() != ERROR_ALREADY_EXISTS;
+            let event = CreateEventW(std::ptr::null(), 0, 0, event_name.as_ptr());
+            if event.is_null() {
+                return first;
+            }
+            if !first {
+                // Let the running instance come to the front, then wake it.
+                AllowSetForegroundWindow(ASFW_ANY);
+                SetEvent(event);
+                return false;
+            }
+            let event = event as usize;
+            std::thread::Builder::new()
+                .name("show-requests".into())
+                .spawn(move || {
+                    loop {
+                        WaitForSingleObject(event as _, INFINITE);
+                        SHOW_REQUESTED.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                })
+                .ok();
+            true
+        }
+    }
+
+    pub fn take_show_request() -> bool {
+        SHOW_REQUESTED.swap(false, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn set_start_with_system(enabled: bool) -> Result<(), String> {
+        use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, REG_SZ, RegDeleteKeyValueW, RegSetKeyValueW};
+
+        let key: Vec<u16> = "Software\\Microsoft\\Windows\\CurrentVersion\\Run\0".encode_utf16().collect();
+        let name: Vec<u16> = "Tachyon Download Manager\0".encode_utf16().collect();
+        // SAFETY: NUL-terminated strings; the data length is in bytes and includes the NUL.
+        let status = unsafe {
+            if enabled {
+                let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+                let command: Vec<u16> = format!("\"{}\" {}\0", exe.display(), super::START_IN_TRAY_FLAG)
+                    .encode_utf16()
+                    .collect();
+                RegSetKeyValueW(
+                    HKEY_CURRENT_USER,
+                    key.as_ptr(),
+                    name.as_ptr(),
+                    REG_SZ,
+                    command.as_ptr().cast(),
+                    (command.len() * 2) as u32,
+                )
+            } else {
+                match RegDeleteKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr()) {
+                    2 => 0, // ERROR_FILE_NOT_FOUND: already off
+                    status => status,
+                }
+            }
+        };
+        if status == 0 { Ok(()) } else { Err(std::io::Error::from_raw_os_error(status as i32).to_string()) }
+    }
+
     pub fn open_with(path: &std::path::Path) {
         // The documented way to show the "Open with" chooser for one file.
         let result = std::process::Command::new("rundll32.exe")
             .arg("shell32.dll,OpenAs_RunDLL")
-            .arg(path)
+            .arg(super::shell_path(path))
             .spawn();
         if let Err(e) = result {
             log::warn!("could not show Open with: {e}");
@@ -297,6 +404,18 @@ mod imp {
     }
 
     pub fn open_with(_: &std::path::Path) {}
+
+    pub fn claim_single_instance(_: &std::path::Path) -> bool {
+        true
+    }
+
+    pub fn take_show_request() -> bool {
+        false
+    }
+
+    pub fn set_start_with_system(_: bool) -> Result<(), String> {
+        Ok(())
+    }
 
     pub fn hide_window(_: &Window) {}
 

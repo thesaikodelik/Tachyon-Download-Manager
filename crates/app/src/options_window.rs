@@ -6,14 +6,14 @@ use gpui::{
     AnyElement, AppContext, Context, Entity, FontWeight, PathPromptOptions, SharedString, Window,
     div, prelude::*, px,
 };
-use tachyon_engine::{CategoryDef, Engine, Settings, default_categories};
+use tachyon_engine::{CategoryDef, Engine, Settings, WindowStyle, default_categories};
 
 use crate::app;
 use crate::format;
 use crate::assets::Icon;
 use crate::theme::Theme;
 use crate::widgets::text_input::TextInput;
-use crate::widgets::{Button, Checkbox, icon, section_title, separator, stepper, tabs, truncated};
+use crate::widgets::{Button, Checkbox, icon, radio_group, section_title, separator, stepper, tabs, truncated};
 
 const TABS: [&str; 5] = ["General", "Connection", "Save To", "File Types", "Browser"];
 const CONNECTION_PRESETS: [u32; 7] = [1, 2, 4, 8, 16, 24, 32];
@@ -138,6 +138,7 @@ impl OptionsWindow {
         });
         match result {
             Ok(settings) => {
+                crate::app::apply_system_settings(&settings, cx);
                 self.draft = settings;
                 self.error = None;
                 self.saved = true;
@@ -187,12 +188,57 @@ impl OptionsWindow {
         div().text_size(px(12.)).text_color(theme.muted).child(text.into())
     }
 
+    /// Window style and notification-area behaviour, which only Windows has.
+    fn render_windows_section(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = &self.draft;
+        let style_note = if crate::platform::supports_backdrops() {
+            "Mica and Liquid Glass let your wallpaper show through. Classic is Tachyon's original look."
+        } else {
+            "Mica and Liquid Glass need Windows 11 22H2 or later; Solid is used instead."
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .child(section_title("Appearance", theme))
+            .child(radio_group(
+                "window-style",
+                WindowStyle::ALL.iter().map(|s| (*s, SharedString::from(s.label()))).collect(),
+                d.window_style,
+                theme,
+                cx.listener(|this, style: &WindowStyle, _, cx| {
+                    this.draft.window_style = *style;
+                    cx.notify();
+                }),
+            ))
+            .child(Self::hint(style_note, theme))
+            .child(div().h(px(6.)))
+            .child(section_title("Notification area", theme))
+            .child(
+                Checkbox::new("close-to-tray", "Keep running in the notification area when the window is closed", d.close_to_tray)
+                    .on_toggle(cx.listener(|this, v: &bool, _, cx| {
+                        this.draft.close_to_tray = *v;
+                        cx.notify();
+                    })),
+            )
+            .child(
+                Checkbox::new("start-with-system", "Start Tachyon when I sign in to Windows", d.start_with_system).on_toggle(
+                    cx.listener(|this, v: &bool, _, cx| {
+                        this.draft.start_with_system = *v;
+                        cx.notify();
+                    }),
+                ),
+            )
+            .child(div().h(px(6.)))
+    }
+
     fn render_general(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let d = &self.draft;
         div()
             .flex()
             .flex_col()
             .gap(px(10.))
+            .when(cfg!(windows), |this| this.child(self.render_windows_section(theme, cx)))
             .child(section_title("Dialogs", theme))
             .child(Checkbox::new("show-progress", "Show the progress window when a download starts", d.show_progress_window).on_toggle(
                 cx.listener(|this, v: &bool, _, cx| {

@@ -439,16 +439,6 @@ pub fn segment_bar(segments: Vec<SegmentState>, total: Option<u64>, theme: &Them
     .overflow_hidden()
 }
 
-/// Windows-style labelled field: a caption above its control, like IDM's dialogs.
-pub fn field(label: impl Into<SharedString>, control: impl IntoElement, theme: &Theme) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(4.))
-        .child(div().text_size(px(12.)).text_color(theme.muted).child(label.into()))
-        .child(control)
-}
-
 /// Lays `content` out at its natural height and sizes the window to match, so a
 /// dialog never clips its content or leaves a gap, whatever it shows (details
 /// expanded, a login form, a longer error…). The window keeps its width.
@@ -495,21 +485,6 @@ pub fn field_row_inline(
                 .child(label.into()),
         )
         .child(div().flex_1().min_w_0().child(control))
-}
-
-/// Read-only value in a box, for values too short to need selecting.
-pub fn value_box(value: impl Into<SharedString>, theme: &Theme) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .h(px(theme.control_height))
-        .px(px(10.))
-        .rounded(px(theme.radius))
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.input_readonly)
-        .text_size(px(13.))
-        .child(truncated(value.into()))
 }
 
 /// A translucent card that groups related content. Glass styles get a light top edge.

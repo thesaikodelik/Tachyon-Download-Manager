@@ -15,6 +15,7 @@ use tachyon_engine::{DownloadId, DownloadSnapshot, DownloadStatus, Engine, GENER
 use crate::add_dialog::AddPrefill;
 use crate::app;
 use crate::assets::Icon;
+use crate::file_icons::file_icon_element;
 use crate::format;
 use crate::theme::Theme;
 use crate::widgets::{Button, ToolbarButton, icon, progress_bar, separator, truncated};
@@ -394,8 +395,7 @@ impl MainWindow {
             .px(px(10.))
             .py(px(6.))
             .bg(theme.chrome)
-            .border_b_1()
-            .border_color(theme.border)
+            .when(!theme.fluent, |this| this.border_b_1().border_color(theme.border))
             .child(
                 ToolbarButton::new("tb-add", "Add URL", Icon::Add)
                     .tint(theme.accent)
@@ -497,15 +497,22 @@ impl MainWindow {
             .flex()
             .items_center()
             .gap(px(8.))
-            .h(px(28.))
+            .relative()
+            .h(px(if theme.fluent { 32. } else { 28. }))
             .pl(px(if indent { 28. } else { 10. }))
             .pr(px(10.))
             .mx(px(8.))
-            .rounded(px(6.))
+            .rounded(px(if theme.fluent { theme.radius } else { 6. }))
             .text_size(px(13.))
             .cursor_pointer()
             .text_color(theme.text)
-            .when(active, |this| this.bg(theme.accent_soft))
+            .when(active && !theme.fluent, |this| this.bg(theme.accent_soft))
+            // Windows 11: a quiet highlight and a short accent bar, as in Settings.
+            .when(active && theme.fluent, |this| {
+                this.bg(theme.hover).child(
+                    div().absolute().left_0().top(px(10.)).w(px(3.)).h(px(12.)).rounded_full().bg(theme.accent),
+                )
+            })
             .when(!active, |this| this.hover(|s| s.bg(theme.hover)))
             .on_click(cx.listener(move |this, _, _, cx| this.set_filter(filter.clone(), cx)))
             .child(icon(item_icon, px(15.), if active { theme.accent } else { theme.muted }))
@@ -582,8 +589,7 @@ impl MainWindow {
             .w(px(SIDEBAR_WIDTH))
             .h_full()
             .bg(theme.surface)
-            .border_r_1()
-            .border_color(theme.border)
+            .when(!theme.fluent, |this| this.border_r_1().border_color(theme.border))
             .pt(px(10.))
             .gap(px(2.))
             .overflow_y_scroll()
@@ -613,7 +619,7 @@ impl MainWindow {
             .h(px(28.))
             .px(px(8.))
             .items_center()
-            .bg(theme.chrome)
+            .when(!theme.fluent, |this| this.bg(theme.chrome))
             .border_b_1()
             .border_color(theme.border)
             .text_size(px(12.))
@@ -647,6 +653,18 @@ impl MainWindow {
     fn render_cell(&self, column: Column, d: &DownloadSnapshot, theme: &Theme) -> AnyElement {
         let muted = theme.muted;
         match column {
+            Column::Name if theme.fluent => div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .min_w_0()
+                .child(if d.status == DownloadStatus::Failed {
+                    icon(Icon::Alert, px(16.), theme.danger).into_any_element()
+                } else {
+                    file_icon_element(&d.path(), &d.category, px(16.), theme)
+                })
+                .child(truncated(d.file_name.clone()))
+                .into_any_element(),
             Column::Name => {
                 let (row_icon, color) = match d.status {
                     DownloadStatus::Failed => (Icon::Alert, theme.danger),
@@ -981,7 +999,7 @@ impl Render for MainWindow {
             .size_full()
             .flex()
             .flex_col()
-            .bg(theme.bg)
+            .bg(theme.window)
             .text_color(theme.text)
             .font_family(".SystemUIFont")
             .child(self.render_toolbar(&theme, cx))
@@ -997,6 +1015,14 @@ impl Render for MainWindow {
                             .flex_col()
                             .flex_1()
                             .min_w_0()
+                            .when(theme.fluent, |this| {
+                                this.bg(theme.layer)
+                                    .rounded_tl(px(theme.radius_large))
+                                    .border_l_1()
+                                    .border_t_1()
+                                    .border_color(theme.border)
+                                    .overflow_hidden()
+                            })
                             .child(self.render_header(&theme, cx))
                             .child(
                                 div()

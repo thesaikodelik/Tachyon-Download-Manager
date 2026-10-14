@@ -19,6 +19,7 @@ mod scheduler_window;
 #[cfg(feature = "dev-snapshots")]
 mod snapshot;
 mod theme;
+mod tray;
 mod widgets;
 
 use std::sync::Arc;
@@ -49,8 +50,17 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     // TACHYON_DATA_DIR keeps development runs away from the real download list.
-    let opened = match std::env::var_os("TACHYON_DATA_DIR") {
-        Some(dir) => Engine::open(dir.into()),
+    let data_dir = std::env::var_os("TACHYON_DATA_DIR").map(std::path::PathBuf::from).or_else(Engine::default_data_dir);
+    // A second launch shows the running Tachyon instead of starting another engine
+    // on the same download list.
+    if let Some(dir) = &data_dir
+        && !platform::claim_single_instance(dir)
+    {
+        return;
+    }
+    let start_in_tray = std::env::args().any(|arg| arg == platform::START_IN_TRAY_FLAG);
+    let opened = match data_dir {
+        Some(dir) => Engine::open(dir),
         None => Engine::open_default(),
     };
     let engine = match opened {
@@ -80,7 +90,15 @@ fn main() {
         #[cfg(feature = "dev-snapshots")]
         snapshot::init(cx);
 
-        app::open_main_window(cx);
+        tray::init(cx);
+        let settings = engine.settings();
+        if settings.start_with_system {
+            // Keeps the sign-in entry pointing at this copy of Tachyon if it moved.
+            if let Err(e) = platform::set_start_with_system(true) {
+                log::warn!("could not update starting with Windows: {e}");
+            }
+        }
+        app::open_main_window_with(!(start_in_tray && tray::is_active()), cx);
     });
 }
 

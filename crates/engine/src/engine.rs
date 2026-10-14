@@ -64,10 +64,13 @@ impl Engine {
     /// Opens the engine with state in the platform data directory (`~/Library/Application
     /// Support/Tachyon` on macOS, `%APPDATA%\Tachyon` on Windows).
     pub fn open_default() -> anyhow::Result<Self> {
-        let dir = dirs::data_dir()
-            .ok_or_else(|| anyhow::anyhow!("no Application Support directory"))?
-            .join("Tachyon");
+        let dir = Self::default_data_dir().ok_or_else(|| anyhow::anyhow!("no Application Support directory"))?;
         Self::open(dir)
+    }
+
+    /// Where [`Engine::open_default`] keeps its state.
+    pub fn default_data_dir() -> Option<PathBuf> {
+        dirs::data_dir().map(|dir| dir.join("Tachyon"))
     }
 
     pub fn open(data_dir: PathBuf) -> anyhow::Result<Self> {

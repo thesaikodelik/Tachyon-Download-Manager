@@ -38,7 +38,7 @@ impl CompleteDialog {
         let engine = app::engine(cx);
         let download = engine.get(id);
         let url = download.as_ref().map(|d| d.url.clone()).unwrap_or_default();
-        let path = download.as_ref().map(|d| d.path().display().to_string()).unwrap_or_default();
+        let path = download.as_ref().map(|d| format::display_path(&d.path())).unwrap_or_default();
         Self {
             download,
             engine,
@@ -76,7 +76,13 @@ impl CompleteDialog {
                 }
                 Ok(DragOutcome::Cancelled) => {}
                 Err(e) => {
-                    this.drag_note = Some(format!("Couldn't move the file: {e}"));
+                    // The details are for the log; the user needs to know what to do.
+                    log::warn!("dragging {} failed: {e}", path.display());
+                    this.drag_note = Some(if path.exists() {
+                        "Couldn't move the file. Use Open folder to move it in Explorer.".into()
+                    } else {
+                        "The file is no longer in this folder.".into()
+                    });
                     cx.notify();
                 }
             })

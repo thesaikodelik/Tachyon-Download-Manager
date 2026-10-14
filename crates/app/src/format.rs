@@ -124,7 +124,7 @@ fn home() -> PathBuf {
 /// nothing to users and full paths are the norm.
 pub fn display_path(path: &Path) -> String {
     if cfg!(windows) {
-        return path.display().to_string();
+        return path.display().to_string().replace('/', "\\");
     }
     let home = home();
     match path.strip_prefix(&home) {

@@ -56,8 +56,21 @@ pub fn init(engine: Arc<Engine>, cx: &mut App) {
     .detach();
 }
 
+/// Applies the settings that live outside the engine: window style and sign-in start.
+pub fn apply_system_settings(settings: &tachyon_engine::Settings, cx: &mut App) {
+    crate::theme::set_style(settings.window_style);
+    cx.refresh_windows();
+    if let Err(e) = crate::platform::set_start_with_system(settings.start_with_system) {
+        log::warn!("could not change starting with Windows: {e}");
+    }
+}
+
 /// Reacts to engine events and watches the clipboard.
 fn tick(cx: &mut App) {
+    if crate::platform::take_show_request() {
+        // Tachyon was launched again: show this instance instead.
+        open_main_window(cx);
+    }
     let engine = engine(cx);
     for event in engine.drain_events() {
         match event {
@@ -140,8 +153,24 @@ fn activate<T: 'static>(handle: Option<WindowHandle<T>>, cx: &mut App) -> bool {
 }
 
 pub fn open_main_window(cx: &mut App) {
-    if activate(cx.global::<AppState>().main_window, cx) {
-        return;
+    open_main_window_with(true, cx);
+}
+
+/// Opens the main window, or with `show` false creates it hidden (starting in the
+/// notification area). An existing window is shown, even if hidden in the tray.
+pub fn open_main_window_with(show: bool, cx: &mut App) {
+    if let Some(handle) = cx.global::<AppState>().main_window {
+        let shown = handle
+            .update(cx, |_, window, _| {
+                if show {
+                    crate::platform::show_window(window);
+                    window.activate_window();
+                }
+            })
+            .is_ok();
+        if shown {
+            return;
+        }
     }
     let bounds = centered(size(px(1120.), px(680.)), cx);
     let options = WindowOptions {
@@ -152,13 +181,27 @@ pub fn open_main_window(cx: &mut App) {
             traffic_light_position: Some(point(px(12.), px(12.))),
         }),
         window_min_size: Some(size(px(760.), px(420.))),
-        focus: true,
+        focus: show,
+        show,
         ..Default::default()
     };
-    if let Ok(handle) = cx.open_window(options, |window, cx| cx.new(|cx| MainWindow::new(window, cx))) {
+    let opened = cx.open_window(options, |window, cx| {
+        // With a notification-area icon, closing the window only hides it, as in IDM.
+        window.on_window_should_close(cx, |window, cx| {
+            let keep_running = crate::tray::is_active() && engine(cx).settings().close_to_tray;
+            if keep_running {
+                crate::platform::hide_window(window);
+            }
+            !keep_running
+        });
+        cx.new(|cx| MainWindow::new(window, cx))
+    });
+    if let Ok(handle) = opened {
         cx.global_mut::<AppState>().main_window = Some(handle);
     }
-    cx.activate(true);
+    if show {
+        cx.activate(true);
+    }
 }
 
 pub fn open_add_dialog(prefill: AddPrefill, cx: &mut App) {

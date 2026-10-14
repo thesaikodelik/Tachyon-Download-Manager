@@ -14,13 +14,13 @@ use crate::widgets::icon;
 /// The system icon for `path`, which need not exist yet: until the download is
 /// done the icon comes from the file type. Programs and shortcuts get their own
 /// icon once they exist. Cached, so it is cheap to call while rendering.
-pub fn file_icon(path: &Path) -> Option<Arc<Image>> {
-    imp::file_icon(path)
+pub fn file_icon(path: &Path, small: bool) -> Option<Arc<Image>> {
+    imp::file_icon(path, small)
 }
 
 /// The system icon for `path`, or the category's icon where there is none.
 pub fn file_icon_element(path: &Path, category: &str, size: Pixels, theme: &Theme) -> AnyElement {
-    match file_icon(path) {
+    match file_icon(path, size <= gpui::px(20.)) {
         Some(image) => img(image).size(size).flex_none().into_any_element(),
         None => icon(Icon::for_category(category), size, theme.accent).into_any_element(),
     }
@@ -42,6 +42,7 @@ mod imp {
     use windows::Win32::UI::Controls::{ILD_TRANSPARENT, IImageList};
     use windows::Win32::UI::Shell::{
         SHFILEINFOW, SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW, SHGetImageList, SHIL_EXTRALARGE,
+        SHIL_SMALL,
     };
     use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO};
     use windows::core::HSTRING;
@@ -53,25 +54,26 @@ mod imp {
         static CACHE: RefCell<HashMap<String, Option<Arc<Image>>>> = RefCell::new(HashMap::new());
     }
 
-    pub fn file_icon(path: &Path) -> Option<Arc<Image>> {
+    pub fn file_icon(path: &Path, small: bool) -> Option<Arc<Image>> {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
         let own = OWN_ICON.contains(&ext.as_str()) && path.is_file();
         let key = if own { path.to_string_lossy().to_lowercase() } else { format!(".{ext}") };
+        let key = format!("{key}|{}", if small { 16 } else { 48 });
         if let Some(hit) = CACHE.with_borrow(|cache| cache.get(&key).cloned()) {
             return hit;
         }
-        let loaded = load(path, &ext, own);
+        let loaded = load(path, &ext, own, small);
         CACHE.with_borrow_mut(|cache| cache.insert(key, loaded.clone()));
         loaded
     }
 
-    fn load(path: &Path, ext: &str, own: bool) -> Option<Arc<Image>> {
+    fn load(path: &Path, ext: &str, own: bool, small: bool) -> Option<Arc<Image>> {
         // SAFETY: plain shell/GDI calls; every handle obtained is released below.
         unsafe {
             let mut info = SHFILEINFOW::default();
             let found = if own {
                 SHGetFileInfoW(
-                    &HSTRING::from(path.as_os_str()),
+                    &HSTRING::from(crate::platform::shell_path(path).as_os_str()),
                     FILE_FLAGS_AND_ATTRIBUTES(0),
                     Some(&mut info),
                     size_of::<SHFILEINFOW>() as u32,
@@ -90,7 +92,7 @@ mod imp {
             if found == 0 {
                 return None;
             }
-            let list: IImageList = SHGetImageList(SHIL_EXTRALARGE as i32).ok()?;
+            let list: IImageList = SHGetImageList((if small { SHIL_SMALL } else { SHIL_EXTRALARGE }) as i32).ok()?;
             let icon = list.GetIcon(info.iIcon, ILD_TRANSPARENT.0).ok()?;
             let png = icon_to_png(icon);
             let _ = DestroyIcon(icon);
@@ -184,7 +186,7 @@ mod imp {
 
     use gpui::Image;
 
-    pub fn file_icon(_: &Path) -> Option<Arc<Image>> {
+    pub fn file_icon(_: &Path, _: bool) -> Option<Arc<Image>> {
         None
     }
 }
