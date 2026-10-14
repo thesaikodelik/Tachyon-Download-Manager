@@ -301,9 +301,9 @@ impl Default for QueueSettings {
 pub enum WindowStyle {
     /// The standard Windows 11 look: a subtle wallpaper tint (Mica).
     Mica,
-    /// Smoky glass over a light blur, with outlined capsule controls.
+    /// Pale smoky glass over a light blur, with outlined capsule controls.
     LiquidGlass,
-    /// Liquid Glass with a denser smoke.
+    /// The dark version of Liquid Glass.
     LiquidSmoke,
     /// Windows 11 colours on opaque windows, for older systems or when transparency
     /// is distracting.

@@ -310,7 +310,7 @@ impl OptionsWindow {
     fn render_windows_section(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let d = &self.draft;
         let style_note = if crate::platform::supports_backdrops() {
-            "Mica and Liquid Glass let your wallpaper show through. Classic is Tachyon's original look."
+            "Liquid Glass is light and Liquid Glass Smoke dark, whatever the theme; both show what is behind the              window. Mica tints with your wallpaper. Classic is Tachyon's original look."
         } else {
             "Mica and Liquid Glass need Windows 11 22H2 or later; Solid is used instead."
         };
