@@ -289,7 +289,6 @@ fn run_command(line: &str, cx: &mut App) {
         }
         "style" => {
             let style = match arg.trim() {
-                "mica" => tachyon_engine::WindowStyle::Mica,
                 "liquid" => tachyon_engine::WindowStyle::LiquidGlass,
                 "smoke" => tachyon_engine::WindowStyle::LiquidSmoke,
                 "solid" => tachyon_engine::WindowStyle::Solid,

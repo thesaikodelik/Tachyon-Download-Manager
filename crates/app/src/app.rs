@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use chrono::TimeZone;
 use gpui::{
-    App, AppContext, Bounds, Global, Pixels, Size, TitlebarOptions, WindowBounds,
+    App, AppContext, Bounds, Entity, Global, Pixels, Render, Size, TitlebarOptions, Window, WindowBounds,
     WindowHandle, WindowKind, WindowOptions, point, px, size,
 };
 use tachyon_engine::{DownloadId, Engine, EngineEvent, PostAction, looks_downloadable};
@@ -159,11 +159,41 @@ pub fn run_post_action(action: PostAction, cx: &mut App) {
         return;
     }
     let bounds = centered(size(px(380.), px(170.)), cx);
-    cx.open_window(dialog_options("Downloads Finished", bounds), |window, cx| {
+    open_styled(dialog_options("Downloads Finished", bounds), cx, |window, cx| {
         cx.new(|cx| PostActionDialog::new(action, window, cx))
     })
     .ok();
     cx.activate(true);
+}
+
+/// Opens a window with its glass in place before anything is drawn, and keeps it
+/// off screen (cloaked) until its first frame is ready. Otherwise a new window
+/// briefly shows what is behind it, unblurred, and then pops into place.
+pub fn open_styled<V: Render + 'static>(
+    options: WindowOptions,
+    cx: &mut App,
+    build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
+) -> anyhow::Result<WindowHandle<V>> {
+    let visible = options.show;
+    cx.open_window(options, move |window, cx| {
+        let theme = crate::theme::Theme::for_appearance(window.appearance());
+        crate::platform::sync_chrome(window, crate::theme::backdrop(), theme.dark);
+        if visible {
+            crate::platform::cloak(window, true);
+            // Two frames: dialogs that fit their content take their final size in the second.
+            window.on_next_frame(|window, _| {
+                window.on_next_frame(|window, _| crate::platform::cloak(window, false));
+            });
+            // Never leave a window invisible, even if no frame comes.
+            window
+                .spawn(cx, async move |cx| {
+                    gpui::Timer::after(Duration::from_millis(500)).await;
+                    cx.update(|window, _| crate::platform::cloak(window, false)).ok();
+                })
+                .detach();
+        }
+        build(window, cx)
+    })
 }
 
 pub fn centered(size: Size<Pixels>, cx: &App) -> Bounds<Pixels> {
@@ -232,7 +262,7 @@ pub fn open_main_window_with(show: bool, cx: &mut App) {
         show,
         ..Default::default()
     };
-    let opened = cx.open_window(options, |window, cx| {
+    let opened = open_styled(options, cx, |window, cx| {
         // With a notification-area icon, closing the window only hides it, as in IDM.
         window.on_window_should_close(cx, |window, cx| {
             let keep_running = crate::tray::is_active() && engine(cx).settings().close_to_tray;
@@ -255,7 +285,7 @@ pub fn open_add_dialog(prefill: AddPrefill, cx: &mut App) {
     // Opens at the size of the first step so it stays centred; later steps resize it.
     let fluent = crate::theme::style() != tachyon_engine::WindowStyle::Classic;
     let bounds = centered(if fluent { size(px(580.), px(136.)) } else { size(px(560.), px(400.)) }, cx);
-    cx.open_window(dialog_options("Add Download", bounds), |window, cx| {
+    open_styled(dialog_options("Add Download", bounds), cx, |window, cx| {
         cx.new(|cx| AddDialog::new(prefill, window, cx))
     })
     .ok();
@@ -287,7 +317,7 @@ pub fn open_progress_window(id: DownloadId, cx: &mut App) {
     let bounds = centered(size(px(w), px(h)), cx);
     let mut options = dialog_options("Download", bounds);
     options.focus = false;
-    if let Ok(handle) = cx.open_window(options, |window, cx| cx.new(|cx| ProgressWindow::new(id, window, cx))) {
+    if let Ok(handle) = open_styled(options, cx, |window, cx| cx.new(|cx| ProgressWindow::new(id, window, cx))) {
         cx.global_mut::<AppState>().progress_windows.insert(id, handle);
     }
 }
@@ -302,7 +332,7 @@ pub fn open_complete_dialog(id: DownloadId, cx: &mut App) {
     let fluent = crate::theme::style() != tachyon_engine::WindowStyle::Classic;
     let (w, h) = if fluent { COMPLETE_SIZE_FLUENT } else { (520., 270.) };
     let bounds = centered(size(px(w), px(h)), cx);
-    cx.open_window(dialog_options("Download Complete", bounds), |window, cx| {
+    open_styled(dialog_options("Download Complete", bounds), cx, |window, cx| {
         cx.new(|cx| CompleteDialog::new(id, window, cx))
     })
     .ok();
@@ -314,7 +344,7 @@ pub fn open_options(cx: &mut App) {
         return;
     }
     let bounds = centered(size(px(800.), px(600.)), cx);
-    if let Ok(handle) = cx.open_window(dialog_options("Options", bounds), |window, cx| {
+    if let Ok(handle) = open_styled(dialog_options("Options", bounds), cx, |window, cx| {
         cx.new(|cx| OptionsWindow::new(window, cx))
     }) {
         cx.global_mut::<AppState>().options_window = Some(handle);
@@ -327,7 +357,7 @@ pub fn open_scheduler(cx: &mut App) {
         return;
     }
     let bounds = centered(size(px(620.), px(620.)), cx);
-    if let Ok(handle) = cx.open_window(dialog_options("Scheduler", bounds), |window, cx| {
+    if let Ok(handle) = open_styled(dialog_options("Scheduler", bounds), cx, |window, cx| {
         cx.new(|cx| SchedulerWindow::new(window, cx))
     }) {
         cx.global_mut::<AppState>().scheduler_window = Some(handle);

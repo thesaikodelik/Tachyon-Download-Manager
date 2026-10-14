@@ -299,9 +299,9 @@ impl Default for QueueSettings {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WindowStyle {
-    /// The standard Windows 11 look: a subtle wallpaper tint (Mica).
-    Mica,
     /// Pale smoky glass over a light blur, with outlined capsule controls.
+    /// ("mica" was a style before Liquid Glass became the default.)
+    #[serde(alias = "mica")]
     LiquidGlass,
     /// The dark version of Liquid Glass.
     LiquidSmoke,
@@ -314,14 +314,13 @@ pub enum WindowStyle {
 
 impl Default for WindowStyle {
     fn default() -> Self {
-        if cfg!(windows) { WindowStyle::Mica } else { WindowStyle::Classic }
+        if cfg!(windows) { WindowStyle::LiquidGlass } else { WindowStyle::Classic }
     }
 }
 
 impl WindowStyle {
     /// Classic stays last: it is the fallback index.
-    pub const ALL: [WindowStyle; 5] = [
-        WindowStyle::Mica,
+    pub const ALL: [WindowStyle; 4] = [
         WindowStyle::LiquidGlass,
         WindowStyle::LiquidSmoke,
         WindowStyle::Solid,
@@ -330,7 +329,6 @@ impl WindowStyle {
 
     pub fn label(self) -> &'static str {
         match self {
-            WindowStyle::Mica => "Mica",
             WindowStyle::LiquidGlass => "Liquid Glass",
             WindowStyle::LiquidSmoke => "Liquid Glass Smoke",
             WindowStyle::Solid => "Solid",
@@ -340,7 +338,7 @@ impl WindowStyle {
 
     /// Whether the style draws over a translucent system backdrop.
     pub fn is_glass(self) -> bool {
-        matches!(self, WindowStyle::Mica | WindowStyle::LiquidGlass | WindowStyle::LiquidSmoke)
+        matches!(self, WindowStyle::LiquidGlass | WindowStyle::LiquidSmoke)
     }
 }
 
@@ -671,6 +669,13 @@ mod settings_tests {
         s.server_limits = vec![ServerLimit { server: "slow.example".into(), max_connections: 2 }];
         assert_eq!(s.connections_for("slow.example"), 2);
         assert_eq!(s.connections_for("fast.example"), s.max_connections);
+    }
+
+    #[test]
+    fn mica_settings_become_liquid_glass() {
+        let s: Settings = serde_json::from_str(r#"{"window_style": "mica", "max_connections": 16}"#).unwrap();
+        assert_eq!(s.window_style, WindowStyle::LiquidGlass);
+        assert_eq!(s.max_connections, 16, "other settings must survive");
     }
 
     #[test]

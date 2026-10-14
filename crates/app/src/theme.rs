@@ -53,7 +53,6 @@ pub fn style() -> WindowStyle {
 /// The system backdrop that goes with the current style.
 pub fn backdrop() -> Backdrop {
     match style() {
-        WindowStyle::Mica => Backdrop::Mica,
         WindowStyle::LiquidGlass | WindowStyle::LiquidSmoke => Backdrop::Blur,
         WindowStyle::Solid | WindowStyle::Classic => Backdrop::None,
     }
@@ -251,7 +250,6 @@ impl Theme {
             bg: if glass { ca(CLEAR) } else { c(0xffffff) },
             layer: match style {
                 WindowStyle::LiquidGlass => ca(0xffffff73),
-                WindowStyle::Mica => ca(0xffffffb3),
                 _ => c(0xffffff),
             },
             surface: base,
@@ -274,13 +272,11 @@ impl Theme {
             track: ca(0x00000020),
             button: match style {
                 WindowStyle::LiquidGlass => ca(0xffffff8c),
-                WindowStyle::Mica => ca(0xffffffb3),
                 _ => c(0xfbfbfb),
             },
             button_hover: if glass { ca(0xffffffe0) } else { c(0xf6f6f6) },
             input: match style {
                 WindowStyle::LiquidGlass => ca(0xffffff8c),
-                WindowStyle::Mica => ca(0xffffffb3),
                 _ => c(0xffffff),
             },
             input_focus: c(0xffffff),
@@ -306,7 +302,6 @@ impl Theme {
             bg: if glass { ca(CLEAR) } else { c(0x272727) },
             layer: match style {
                 WindowStyle::LiquidGlass => ca(0x2828285c),
-                WindowStyle::Mica => ca(0x3a3a3a4d),
                 _ => c(0x272727),
             },
             surface: base,

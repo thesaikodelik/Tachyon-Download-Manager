@@ -405,7 +405,7 @@ impl MainWindow {
             .child(divider())
             .child(
                 ToolbarButton::new("tb-resume", "Resume", Icon::Play)
-                    .tint(theme.success)
+                    .tint(if theme.fluent { theme.accent } else { theme.success })
                     .disabled(!can_resume)
                     .on_click(cx.listener(|this, _, _, cx| this.resume(cx))),
             )
@@ -515,7 +515,8 @@ impl MainWindow {
             })
             .when(!active, |this| this.hover(|s| s.bg(theme.hover)))
             .on_click(cx.listener(move |this, _, _, cx| this.set_filter(filter.clone(), cx)))
-            .child(icon(item_icon, px(15.), if active { theme.accent } else { theme.muted }))
+            // Windows 11 styles: icons in the accent colour, set apart from the text.
+            .child(icon(item_icon, px(15.), if active || theme.fluent { theme.accent } else { theme.muted }))
             .child(div().flex_1().min_w_0().child(truncated(label)))
             .when(count > 0, |this| {
                 this.child(div().text_size(px(11.)).text_color(theme.muted).child(count.to_string()))
@@ -1093,5 +1094,5 @@ pub fn show_about(cx: &mut App) {
     let bounds = app::centered(size(px(380.), px(240.)), cx);
     let mut options = app::dialog_options("About Tachyon", bounds);
     options.window_bounds = Some(WindowBounds::Windowed(bounds));
-    cx.open_window(options, |_, cx| cx.new(|_| AboutWindow)).ok();
+    app::open_styled(options, cx, |_, cx| cx.new(|_| AboutWindow)).ok();
 }

@@ -27,7 +27,7 @@ pub fn show(kind: Kind, title: &str, heading: impl Into<SharedString>, body: imp
     let body = body.into();
     let window_title = SharedString::from(title.to_string());
     let bounds = app::centered(size(px(440.), px(150.)), cx);
-    cx.open_window(app::dialog_options(title, bounds), |_, cx| cx.new(|_| MessageDialog { title: window_title, kind, heading, body }))
+    app::open_styled(app::dialog_options(title, bounds), cx, |_, cx| cx.new(|_| MessageDialog { title: window_title, kind, heading, body }))
         .ok();
     cx.activate(true);
 }

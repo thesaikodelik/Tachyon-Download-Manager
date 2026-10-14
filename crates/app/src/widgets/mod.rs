@@ -191,7 +191,12 @@ impl ToolbarButton {
 impl RenderOnce for ToolbarButton {
     fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let theme = Theme::of(window);
-        let color = if self.disabled { theme.faint } else { self.tint.unwrap_or(theme.text) };
+        // Windows 11 styles colour every icon with the accent, set apart from the label.
+        let color = if self.disabled {
+            theme.faint
+        } else {
+            self.tint.unwrap_or(if theme.fluent { theme.accent } else { theme.text })
+        };
         let handler = self.on_click.clone();
         let disabled = self.disabled;
         div()

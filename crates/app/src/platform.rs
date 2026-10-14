@@ -1,5 +1,5 @@
-//! Native window chrome that GPUI doesn't cover: Windows 11 backdrops (Mica or
-//! a light blur), a title bar that follows dark mode, and hiding the main window to the
+//! Native window chrome that GPUI doesn't cover: the light blur behind the glass
+//! styles, a title bar that follows dark mode, and hiding the main window to the
 //! notification area instead of closing it.
 //!
 //! Everything here is a no-op on other platforms.
@@ -10,14 +10,12 @@ use gpui::Window;
 pub enum Backdrop {
     /// Plain opaque window.
     None,
-    /// A subtle tint taken from the desktop wallpaper.
-    Mica,
     /// A light blur that keeps what is behind the window recognisable (Liquid Glass).
     Blur,
 }
 
-/// Whether this system can draw [`Backdrop::Mica`] and [`Backdrop::Blur`]
-/// (Windows 11 22H2, build 22621, or later).
+/// Whether this system can draw [`Backdrop::Blur`] behind Tachyon's own drawing
+/// (Windows 10 1809, build 17763, or later).
 pub fn supports_backdrops() -> bool {
     imp::supports_backdrops()
 }
@@ -113,6 +111,12 @@ pub fn show_window(window: &Window) {
     imp::show_window(window)
 }
 
+/// Keeps a shown window off screen (it still renders) until uncloaked, so it
+/// appears complete instead of building up in view.
+pub fn cloak(window: &Window, cloaked: bool) {
+    imp::cloak(window, cloaked)
+}
+
 #[cfg(windows)]
 mod imp {
     use std::sync::OnceLock;
@@ -121,10 +125,8 @@ mod imp {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::Graphics::Dwm::{
-        DWMSBT_MAINWINDOW, DWMSBT_NONE, DWMWA_SYSTEMBACKDROP_TYPE,
-        DWMWA_USE_IMMERSIVE_DARK_MODE, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
+        DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute,
     };
-    use windows_sys::Win32::UI::Controls::MARGINS;
     use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_SHOW, SetForegroundWindow, ShowWindow};
 
     use super::{Backdrop, DragOutcome};
@@ -138,7 +140,7 @@ mod imp {
 
     pub fn supports_backdrops() -> bool {
         static SUPPORTED: OnceLock<bool> = OnceLock::new();
-        *SUPPORTED.get_or_init(|| build_number().is_some_and(|build| build >= 22621))
+        *SUPPORTED.get_or_init(|| build_number().is_some_and(|build| build >= 17763))
     }
 
     /// The OS build number, read from the registry since `GetVersionEx` lies to
@@ -226,26 +228,7 @@ mod imp {
         let Some(hwnd) = hwnd(window) else { return false };
         set_attribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, i32::from(dark));
         let active = backdrop != Backdrop::None && supports_backdrops();
-        let kind = match backdrop {
-            _ if !active => DWMSBT_NONE,
-            Backdrop::Mica => DWMSBT_MAINWINDOW,
-            _ => DWMSBT_NONE,
-        };
-        // GPUI clears each frame to transparent, so once the frame extends over the
-        // whole client area the system backdrop shows wherever the app paints nothing.
-        // Only the system backdrop (Mica) needs this; the blur accent draws behind on its own.
-        let extend = active && backdrop == Backdrop::Mica;
-        let margins = MARGINS {
-            cxLeftWidth: if extend { -1 } else { 0 },
-            cxRightWidth: if extend { -1 } else { 0 },
-            cyTopHeight: if extend { -1 } else { 0 },
-            cyBottomHeight: if extend { -1 } else { 0 },
-        };
-        // SAFETY: `margins` outlives the call.
-        unsafe { DwmExtendFrameIntoClientArea(hwnd, &margins) };
-        set_attribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, kind);
-        // The light blur is an accent, not a system backdrop, and has to be set after
-        // the backdrop type, which would otherwise reset it.
+        // GPUI clears each frame to transparent; the blur accent shows behind it.
         set_accent(hwnd, if active && backdrop == Backdrop::Blur { 3 } else { 0 });
         active
     }
@@ -445,6 +428,13 @@ mod imp {
         }
     }
 
+    pub fn cloak(window: &Window, cloaked: bool) {
+        use windows_sys::Win32::Graphics::Dwm::DWMWA_CLOAK;
+        if let Some(hwnd) = hwnd(window) {
+            set_attribute(hwnd, DWMWA_CLOAK, i32::from(cloaked));
+        }
+    }
+
     pub fn show_window(window: &Window) {
         if let Some(hwnd) = hwnd(window) {
             // SAFETY: `hwnd` belongs to a live GPUI window.
@@ -503,4 +493,6 @@ mod imp {
     pub fn hide_window(_: &Window) {}
 
     pub fn show_window(_: &Window) {}
+
+    pub fn cloak(_: &Window, _: bool) {}
 }

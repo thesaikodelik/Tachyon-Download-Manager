@@ -310,9 +310,10 @@ impl OptionsWindow {
     fn render_windows_section(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let d = &self.draft;
         let style_note = if crate::platform::supports_backdrops() {
-            "Liquid Glass is light and Liquid Glass Smoke dark, whatever the theme; both show what is behind the              window. Mica tints with your wallpaper. Classic is Tachyon's original look."
+            "Liquid Glass is light and Liquid Glass Smoke dark, whatever the theme; both show what is behind \
+             the window. Classic is Tachyon's original look."
         } else {
-            "Mica and Liquid Glass need Windows 11 22H2 or later; Solid is used instead."
+            "Liquid Glass needs Windows 10 1809 or later; Solid is used instead."
         };
         div()
             .flex()
@@ -879,7 +880,7 @@ impl OptionsWindow {
                         this.tab = ix;
                         cx.notify();
                     }))
-                    .child(icon(*section_icon, px(15.), if active { theme.accent } else { theme.muted }))
+                    .child(icon(*section_icon, px(15.), if active || theme.fluent { theme.accent } else { theme.muted }))
                     .child(*label)
             }))
     }
