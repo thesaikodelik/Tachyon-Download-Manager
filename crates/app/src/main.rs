@@ -5,12 +5,14 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod add_dialog;
+mod antivirus;
 mod app;
 mod assets;
 mod complete_dialog;
 mod file_icons;
 mod format;
 mod main_window;
+mod message_dialog;
 mod options_window;
 mod platform;
 mod post_action;

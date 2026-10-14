@@ -230,6 +230,9 @@ pub enum EngineEvent {
     Captured(Box<AddRequest>),
     /// A download asked for a system action once it finished.
     PostAction(PostAction),
+    /// The download limit (Options → Connection) was reached; downloads were stopped
+    /// and can start again at `resumes_at` (Unix time).
+    QuotaReached { resumes_at: i64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

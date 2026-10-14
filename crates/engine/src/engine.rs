@@ -40,6 +40,19 @@ struct Inner {
     events: Mutex<Vec<EngineEvent>>,
     dirty: AtomicBool,
     integration: Mutex<Option<(u16, CancellationToken)>>,
+    quota: Mutex<QuotaState>,
+}
+
+/// Bytes received in the current download-limit period.
+#[derive(Default)]
+struct QuotaState {
+    started: Option<std::time::Instant>,
+    started_unix: i64,
+    used: u64,
+    /// Bytes each running download had at the last check.
+    seen: HashMap<DownloadId, u64>,
+    /// The limit was reached; nothing starts until the period ends.
+    blocked: bool,
 }
 
 #[derive(Default)]
@@ -99,6 +112,7 @@ impl Engine {
             events: Mutex::new(Vec::new()),
             dirty: AtomicBool::new(false),
             integration: Mutex::new(None),
+            quota: Mutex::new(QuotaState::default()),
         });
         inner.sync_integration();
         let weak = Arc::downgrade(&inner);
@@ -625,6 +639,11 @@ impl Inner {
         if state.tasks.contains_key(&id) {
             return Ok(());
         }
+        if self.quota.lock().blocked {
+            return Err(EngineError::Config(
+                "the download limit set in Options is reached; downloads can start again when the period ends".into(),
+            ));
+        }
         let record = state.records.get_mut(&id).ok_or(EngineError::NotFound)?;
         if record.status == DownloadStatus::Completed {
             return Ok(());
@@ -832,7 +851,46 @@ impl Inner {
         }
     }
 
+    /// Counts received bytes against the download limit and stops everything when
+    /// it is reached, as IDM's "Download limits" does.
+    fn enforce_quota(&self) {
+        let quota = self.settings.read().quota.clone();
+        let mut q = self.quota.lock();
+        if !quota.enabled {
+            *q = QuotaState::default();
+            return;
+        }
+        let period = Duration::from_secs(quota.hours * 3600);
+        if q.started.is_none_or(|t| t.elapsed() >= period) {
+            q.started = Some(std::time::Instant::now());
+            q.started_unix = now();
+            q.used = 0;
+            q.blocked = false;
+        }
+        let state = self.state.lock();
+        let mut seen = HashMap::new();
+        for (id, task) in &state.tasks {
+            let downloaded = task.downloaded().unwrap_or(0);
+            let before = q.seen.get(id).copied().unwrap_or(downloaded);
+            q.used += downloaded.saturating_sub(before);
+            seen.insert(*id, downloaded);
+        }
+        q.seen = seen;
+        if q.blocked || q.used < quota.megabytes * 1024 * 1024 {
+            return;
+        }
+        q.blocked = true;
+        let resumes_at = q.started_unix + period.as_secs() as i64;
+        drop(q);
+        for task in state.tasks.values() {
+            task.cancel.cancel();
+        }
+        drop(state);
+        self.push_event(EngineEvent::QuotaReached { resumes_at });
+    }
+
     fn maintenance(self: &Arc<Self>, tick: u64) {
+        self.enforce_quota();
         self.checkpoint();
         self.pump_queue();
         self.run_scheduler();

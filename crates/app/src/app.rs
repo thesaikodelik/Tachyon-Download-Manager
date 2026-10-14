@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::TimeZone;
 use gpui::{
     App, AppContext, Bounds, Global, Pixels, Size, TitlebarOptions, WindowBounds,
     WindowHandle, WindowKind, WindowOptions, point, px, size,
@@ -75,13 +76,45 @@ fn tick(cx: &mut App) {
     for event in engine.drain_events() {
         match event {
             EngineEvent::Completed(id) => on_completed(id, cx),
-            EngineEvent::Failed { .. } => {}
+            EngineEvent::Failed { .. } => {
+                if engine.settings().play_sounds {
+                    crate::platform::play_sound(false);
+                }
+            }
+            EngineEvent::QuotaReached { resumes_at } => {
+                let when = chrono::Local
+                    .timestamp_opt(resumes_at, 0)
+                    .single()
+                    .map(|t| t.format("%H:%M").to_string())
+                    .unwrap_or_else(|| "the end of the period".into());
+                crate::message_dialog::show(
+                    crate::message_dialog::Kind::Info,
+                    "Download Limit",
+                    "Download limit reached",
+                    format!(
+                        "Downloads were stopped because the limit set in Options → Connection was reached. \
+                         They can start again at {when}."
+                    ),
+                    cx,
+                );
+            }
             EngineEvent::Captured(request) => {
                 open_add_dialog(AddPrefill::Captured(request), cx);
             }
             EngineEvent::QueueFinished { post_action } => run_post_action(post_action, cx),
             EngineEvent::PostAction(action) => run_post_action(action, cx),
         }
+    }
+
+    for finding in crate::antivirus::take_findings() {
+        let name = finding.file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        crate::message_dialog::show(
+            crate::message_dialog::Kind::Warning,
+            "Virus Scan",
+            format!("Virus scan: {name}"),
+            finding.message,
+            cx,
+        );
     }
 
     if engine.settings().monitor_clipboard {
@@ -103,6 +136,13 @@ fn on_completed(id: DownloadId, cx: &mut App) {
     let Some(download) = engine.get(id) else { return };
     if let Some(handle) = cx.global_mut::<AppState>().progress_windows.remove(&id) {
         handle.update(cx, |_, window, _| window.remove_window()).ok();
+    }
+    let settings = engine.settings();
+    if settings.play_sounds {
+        crate::platform::play_sound(true);
+    }
+    if settings.virus_scan {
+        crate::antivirus::scan(download.path(), settings.virus_scanner.clone());
     }
     if download.completion.open_file {
         cx.open_with_system(&download.path());

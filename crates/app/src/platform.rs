@@ -83,6 +83,11 @@ pub fn set_start_with_system(enabled: bool) -> Result<(), String> {
     imp::set_start_with_system(enabled)
 }
 
+/// Plays the system sound for a finished (or failed) download.
+pub fn play_sound(success: bool) {
+    imp::play_sound(success)
+}
+
 /// Command-line flag used when Windows starts Tachyon at sign-in.
 pub const START_IN_TRAY_FLAG: &str = "--tray";
 
@@ -320,6 +325,14 @@ mod imp {
         SHOW_REQUESTED.swap(false, std::sync::atomic::Ordering::Relaxed)
     }
 
+    pub fn play_sound(success: bool) {
+        use windows_sys::Win32::System::Diagnostics::Debug::MessageBeep;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONASTERISK, MB_ICONHAND};
+        // The sounds the user picked for "Asterisk" and "Critical Stop" in Windows.
+        // SAFETY: plain Win32 call.
+        unsafe { MessageBeep(if success { MB_ICONASTERISK } else { MB_ICONHAND }) };
+    }
+
     pub fn set_start_with_system(enabled: bool) -> Result<(), String> {
         use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, REG_SZ, RegDeleteKeyValueW, RegSetKeyValueW};
 
@@ -412,6 +425,8 @@ mod imp {
     pub fn take_show_request() -> bool {
         false
     }
+
+    pub fn play_sound(_: bool) {}
 
     pub fn set_start_with_system(_: bool) -> Result<(), String> {
         Ok(())

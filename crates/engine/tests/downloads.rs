@@ -356,3 +356,21 @@ fn finds_downloads_already_in_the_list() {
     let id = engine.add(request(&server.url, false)).unwrap();
     assert_eq!(engine.find_by_url(&server.url).map(|d| d.id), Some(id));
 }
+
+#[test]
+fn download_limit_stops_downloads() {
+    let rt = server_runtime();
+    // 8 MiB at 1 MiB/s per connection: well past a 1 MB limit within a few seconds.
+    let server = rt.block_on(TestServer::start(ServerConfig { size: 8 << 20, throttle: 1 << 20, ..Default::default() }));
+    let dir = tempfile::tempdir().unwrap();
+    let engine = open_engine(dir.path(), |s| {
+        s.max_connections = 2;
+        s.quota = tachyon_engine::DownloadQuota { enabled: true, megabytes: 1, hours: 1 };
+    });
+    let id = engine.add(request(&server.url, true)).unwrap();
+    let snap = wait_for(&engine, id, Duration::from_secs(15), |d| d.status == DownloadStatus::Stopped);
+    assert!(snap.downloaded < 8 << 20, "the limit didn't stop the download");
+    assert!(engine.drain_events().iter().any(|e| matches!(e, EngineEvent::QuotaReached { .. })));
+    // Nothing starts again until the period ends.
+    assert!(engine.start(id).is_err());
+}

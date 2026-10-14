@@ -7,7 +7,8 @@ use gpui::{
     Subscription, Window, anchored, deferred, div, prelude::*, px, size,
 };
 use tachyon_engine::{
-    AddRequest, Credentials, Engine, GENERAL, ProbeInfo, RequestSpec, derive_file_name, extension_of,
+    AddRequest, Credentials, DownloadSnapshot, DownloadStatus, DuplicateAction, Engine, GENERAL, ProbeInfo,
+    RequestSpec, derive_file_name, extension_of,
 };
 
 use crate::app;
@@ -57,6 +58,10 @@ pub struct AddDialog {
     folder_chosen: bool,
     /// IDM's "Remember this path": make the chosen folder the category's default.
     remember_folder: bool,
+    /// The same link is already in the list and the user is asked what to do.
+    duplicate: Option<DownloadSnapshot>,
+    /// The user chose to add the link again anyway.
+    allow_duplicate: bool,
     /// Headers (referrer, cookies…) that came with a captured link.
     base_request: RequestSpec,
     captured_name: Option<String>,
@@ -145,6 +150,8 @@ impl AddDialog {
             category_menu: false,
             folder_chosen: false,
             remember_folder: false,
+            duplicate: None,
+            allow_duplicate: false,
             base_request,
             captured_name,
             probe: None,
@@ -297,8 +304,124 @@ impl AddDialog {
         cx.notify();
     }
 
+    /// Handles a link that is already in the list, per Options → Downloads.
+    /// Returns true when it was dealt with and nothing should be added.
+    fn handle_duplicate(&mut self, start: bool, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.allow_duplicate {
+            return false;
+        }
+        let Some(existing) = self.engine.find_by_url(&self.request_spec(cx).url) else {
+            return false;
+        };
+        match self.engine.settings().duplicate_action {
+            DuplicateAction::AddNumbered => false,
+            DuplicateAction::Ask => {
+                self.duplicate = Some(existing);
+                cx.notify();
+                true
+            }
+            DuplicateAction::Overwrite => {
+                self.download_over(existing, start, window, cx);
+                true
+            }
+            DuplicateAction::ShowExisting => {
+                Self::show_existing(&existing, cx);
+                window.remove_window();
+                true
+            }
+        }
+    }
+
+    /// Downloads the existing entry again from scratch, replacing its file.
+    fn download_over(&mut self, existing: DownloadSnapshot, start: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if existing.status.is_active() {
+            self.error = Some("That download is running. Stop it first, or add the link again.".into());
+            cx.notify();
+            return;
+        }
+        if existing.status == DownloadStatus::Completed {
+            let _ = std::fs::remove_file(existing.path());
+        }
+        let result = self.engine.redownload(existing.id).and_then(|()| {
+            if start { self.engine.start(existing.id) } else { Ok(()) }
+        });
+        match result {
+            Ok(()) => {
+                if start && self.engine.settings().show_progress_window {
+                    app::open_progress_window(existing.id, cx);
+                }
+                window.remove_window();
+            }
+            Err(e) => {
+                self.error = Some(e.to_string());
+                cx.notify();
+            }
+        }
+    }
+
+    fn show_existing(existing: &DownloadSnapshot, cx: &mut Context<Self>) {
+        if existing.status.is_active() {
+            app::open_progress_window(existing.id, cx);
+        } else {
+            app::open_main_window(cx);
+        }
+    }
+
+    /// The "already in your list" box shown when Options says to ask.
+    fn render_duplicate(&self, existing: &DownloadSnapshot, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .px(px(12.))
+            .py(px(10.))
+            .rounded(px(theme.radius_large))
+            .border_1()
+            .border_color(theme.warning)
+            .bg(theme.layer)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(icon(Icon::Alert, px(16.), theme.warning))
+                    .child(div().font_weight(FontWeight::SEMIBOLD).child("This link is already in your list"))
+                    .child(div().text_color(theme.muted).child(format!("· {}", format::status_line(existing)))),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap(px(8.))
+                    .child(Button::new("dup-again", "Add it again").compact().on_click(cx.listener(
+                        |this, _, window, cx| {
+                            this.allow_duplicate = true;
+                            this.duplicate = None;
+                            this.add(true, window, cx);
+                        },
+                    )))
+                    .child(Button::new("dup-over", "Download it over again").compact().on_click(cx.listener(
+                        |this, _, window, cx| {
+                            if let Some(existing) = this.duplicate.take() {
+                                this.download_over(existing, true, window, cx);
+                            }
+                        },
+                    )))
+                    .child(Button::new("dup-show", "Show the existing one").compact().on_click(cx.listener(
+                        |this, _, window, cx| {
+                            if let Some(existing) = this.duplicate.take() {
+                                Self::show_existing(&existing, cx);
+                                window.remove_window();
+                            }
+                        },
+                    ))),
+            )
+    }
+
     pub(crate) fn add(&mut self, start: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.stage != Stage::Info {
+            return;
+        }
+        if self.handle_duplicate(start, window, cx) {
             return;
         }
         let name = self.file_name.read(cx).text().trim().to_string();
@@ -665,6 +788,7 @@ impl AddDialog {
                     .child(self.render_file_card(theme, cx)),
             )
             .child(field_row_inline("Description", LABEL_WIDTH, self.description.clone(), theme))
+            .when_some(self.duplicate.clone(), |this, existing| this.child(self.render_duplicate(&existing, theme, cx)))
             .when_some(self.probe_error.as_ref(), |this, e| {
                 this.child(
                     div()
