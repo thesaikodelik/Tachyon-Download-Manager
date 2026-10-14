@@ -1007,15 +1007,32 @@ impl OptionsWindow {
             ))
             .child(Self::hint(
                 "Firefox: open about:debugging, choose This Firefox › Load Temporary Add-on and pick manifest.json \
-                 in the extension folder. It stays until Firefox restarts.",
+                 in the Firefox version's folder. It stays until Firefox restarts.",
                 theme,
             ))
             .child(Self::hint("Then right-click any link and choose “Download with Tachyon”, or let it take over downloads.", theme))
             .child(div().pt(px(4.)).child(match extension {
-                Some(path) => Button::new("show-ext", "Show Extension Folder")
-                    .icon(Icon::Folder)
-                    .on_click(move |_, _, cx| cx.reveal_path(&path))
-                    .into_any_element(),
+                Some(path) => {
+                    let data_dir = self.engine.data_dir().to_path_buf();
+                    div()
+                        .flex()
+                        .gap(px(8.))
+                        .child(
+                            Button::new("show-ext", "Show Extension Folder")
+                                .icon(Icon::Folder)
+                                .on_click(move |_, _, cx| cx.reveal_path(&path)),
+                        )
+                        .child(Button::new("show-ext-firefox", "Show Firefox Version").icon(Icon::Folder).on_click(
+                            cx.listener(move |this, _, _, cx| match app::firefox_extension_dir(&data_dir) {
+                                Ok(dir) => cx.reveal_path(&dir.join("manifest.json")),
+                                Err(e) => {
+                                    this.error = Some(format!("Couldn't prepare the Firefox version: {e}"));
+                                    cx.notify();
+                                }
+                            }),
+                        ))
+                        .into_any_element()
+                }
                 None => Self::hint("The extension folder wasn't found next to the app.", theme).into_any_element(),
             }))
             .into_any_element()

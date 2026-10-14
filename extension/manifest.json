@@ -16,10 +16,7 @@
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background.js",
-    "scripts": [
-      "background.js"
-    ]
+    "service_worker": "background.js"
   },
   "action": {
     "default_title": "Tachyon",
@@ -27,12 +24,6 @@
     "default_icon": {
       "16": "icons/bolt-16.png",
       "32": "icons/bolt-32.png"
-    }
-  },
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "tachyon@localhost",
-      "strict_min_version": "121.0"
     }
   },
   "icons": {

@@ -231,7 +231,10 @@
   async function expand() {
     candidates = await findCandidates();
     if (!candidates.length) {
-      label.textContent = "No downloadable file";
+      // A blob: source is a stream assembled from pieces; otherwise the file was
+      // most likely loaded before the extension started watching this tab.
+      const src = video?.currentSrc || "";
+      label.textContent = src.startsWith("blob:") ? "Streamed video – not supported yet" : "Reload the page to find it";
     } else if (candidates.length === 1) {
       label.textContent = formatSize(candidates[0].size) || "Download";
     } else {
@@ -316,7 +319,6 @@
     openMenu([
       {
         text: "Hide here",
-        note: "until reload",
         run: () => {
           if (video) dismissed.add(video);
           overUi = false;

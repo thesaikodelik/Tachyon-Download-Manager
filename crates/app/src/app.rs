@@ -385,6 +385,34 @@ pub fn open_scheduler(cx: &mut App) {
     cx.activate(true);
 }
 
+/// The extension as Firefox loads it: a copy with Firefox's own manifest, which
+/// Chrome would warn about. Rebuilt in Tachyon's data folder on every call.
+pub fn firefox_extension_dir(data_dir: &std::path::Path) -> std::io::Result<PathBuf> {
+    let source = extension_dir().ok_or_else(|| std::io::Error::other("extension folder not found"))?;
+    let target = data_dir.join("firefox-extension");
+    if target.exists() {
+        std::fs::remove_dir_all(&target)?;
+    }
+    copy_dir(&source, &target)?;
+    std::fs::remove_file(target.join("firefox.json"))?;
+    std::fs::copy(source.join("firefox.json"), target.join("manifest.json"))?;
+    Ok(target)
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let dest = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &dest)?;
+        } else {
+            std::fs::copy(entry.path(), dest)?;
+        }
+    }
+    Ok(())
+}
+
 /// The bundled browser extension, for the Options window's "Show extension" button.
 pub fn extension_dir() -> Option<PathBuf> {
     let exe_dir = std::env::current_exe().ok().and_then(|exe| exe.parent().map(PathBuf::from));
