@@ -2,27 +2,19 @@
 //! window's glass. Windows still handles it natively: dragging, double-click to
 //! maximize, and snap layouts on the maximize button.
 
-use std::sync::{Arc, OnceLock};
+use gpui::{AnyElement, SharedString, Window, WindowControlArea, div, prelude::*, px, rgb};
 
-use gpui::{AnyElement, Image, ImageFormat, SharedString, Window, WindowControlArea, div, img, prelude::*, px, rgb};
-
+use crate::assets::Icon;
 use crate::platform;
 use crate::theme::Theme;
+use crate::widgets::icon;
 
 const HEIGHT: f32 = 32.;
 const BUTTON_WIDTH: f32 = 46.;
 
-fn app_icon() -> Arc<Image> {
-    static ICON: OnceLock<Arc<Image>> = OnceLock::new();
-    ICON.get_or_init(|| {
-        Arc::new(Image::from_bytes(ImageFormat::Png, include_bytes!("../../assets/windows/tray.png").to_vec()))
-    })
-    .clone()
-}
-
 /// Windows 11 has Segoe Fluent Icons; Windows 10 the same glyphs in Segoe MDL2 Assets.
 fn glyph_font() -> &'static str {
-    if platform::supports_backdrops() { "Segoe Fluent Icons" } else { "Segoe MDL2 Assets" }
+    if platform::is_windows_11() { "Segoe Fluent Icons" } else { "Segoe MDL2 Assets" }
 }
 
 fn caption_button(
@@ -76,7 +68,7 @@ pub fn title_bar(title: impl Into<SharedString>, maximizable: bool, window: &Win
                 .gap(px(10.))
                 .pl(px(12.))
                 .window_control_area(WindowControlArea::Drag)
-                .child(img(app_icon()).size(px(16.)).flex_none())
+                .child(icon(Icon::Bolt, px(16.), theme.accent))
                 .child(
                     div()
                         .text_size(px(12.))

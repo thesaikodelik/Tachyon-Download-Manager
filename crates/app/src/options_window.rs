@@ -915,25 +915,48 @@ impl Render for OptionsWindow {
                     .min_h_0()
                     .child(self.render_nav(&theme, cx))
                     .child(
+                        // As in the main window: the page sits on a panel that runs to the
+                        // bottom corner, with its buttons inside it.
                         div()
-                            .id("options-body")
+                            .flex()
+                            .flex_col()
                             .flex_1()
                             .min_w_0()
-                            .overflow_y_scroll()
-                            .px(px(24.))
-                            .py(px(18.))
+                            .when(theme.fluent, |this| {
+                                this.bg(theme.layer)
+                                    .rounded_tl(px(theme.radius_large))
+                                    .border_l_1()
+                                    .border_t_1()
+                                    .border_color(theme.border)
+                                    .overflow_hidden()
+                            })
                             .child(
                                 div()
-                                    .pb(px(12.))
-                                    .text_size(px(20.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(title),
+                                    .id("options-body")
+                                    .flex_1()
+                                    .min_h_0()
+                                    .overflow_y_scroll()
+                                    .px(px(24.))
+                                    .py(px(18.))
+                                    .child(
+                                        div()
+                                            .pb(px(12.))
+                                            .text_size(px(20.))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .child(title),
+                                    )
+                                    .child(body),
                             )
-                            .child(body),
+                            .when(!theme.fluent, |this| this.child(separator(&theme)))
+                            .child(self.render_footer(&theme, cx)),
                     ),
             )
-            .child(separator(&theme))
-            .child(
+    }
+}
+
+impl OptionsWindow {
+    fn render_footer(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *theme;
                 div()
                     .flex()
                     .flex_none()
@@ -941,7 +964,8 @@ impl Render for OptionsWindow {
                     .gap(px(8.))
                     .px(px(20.))
                     .py(px(10.))
-                    .bg(theme.chrome)
+                    .when(!theme.fluent, |this| this.bg(theme.chrome))
+                    .when(theme.fluent, |this| this.border_t_1().border_color(theme.border))
                     .child(
                         div()
                             .flex_1()
@@ -960,7 +984,6 @@ impl Render for OptionsWindow {
                     .child(Button::new("cancel", "Cancel").on_click(|_, window, _| window.remove_window()))
                     .child(Button::new("apply", "Apply").on_click(cx.listener(|this, _, _, cx| {
                         this.apply(cx);
-                    }))),
-            )
+                    })))
     }
 }

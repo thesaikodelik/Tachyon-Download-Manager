@@ -20,6 +20,11 @@ pub fn supports_backdrops() -> bool {
     imp::supports_backdrops()
 }
 
+/// Windows 11 (build 22000 or later), which has the Segoe Fluent Icons font.
+pub fn is_windows_11() -> bool {
+    imp::is_windows_11()
+}
+
 /// Matches the native title bar to the app's light/dark appearance and applies
 /// `backdrop` if the system supports it. Only touches the window when `backdrop`
 /// or `dark` changed for it, so it is cheap enough to run on every render.
@@ -141,6 +146,11 @@ mod imp {
     pub fn supports_backdrops() -> bool {
         static SUPPORTED: OnceLock<bool> = OnceLock::new();
         *SUPPORTED.get_or_init(|| build_number().is_some_and(|build| build >= 17763))
+    }
+
+    pub fn is_windows_11() -> bool {
+        static WINDOWS_11: OnceLock<bool> = OnceLock::new();
+        *WINDOWS_11.get_or_init(|| build_number().is_some_and(|build| build >= 22000))
     }
 
     /// The OS build number, read from the registry since `GetVersionEx` lies to
@@ -453,6 +463,10 @@ mod imp {
     use super::{Backdrop, DragOutcome};
 
     pub fn supports_backdrops() -> bool {
+        false
+    }
+
+    pub fn is_windows_11() -> bool {
         false
     }
 
