@@ -1,5 +1,5 @@
 //! Native window chrome that GPUI doesn't cover: Windows 11 backdrops (Mica or
-//! Acrylic), a title bar that follows dark mode, and hiding the main window to the
+//! a light blur), a title bar that follows dark mode, and hiding the main window to the
 //! notification area instead of closing it.
 //!
 //! Everything here is a no-op on other platforms.
@@ -12,11 +12,11 @@ pub enum Backdrop {
     None,
     /// A subtle tint taken from the desktop wallpaper.
     Mica,
-    /// Frosted glass.
-    Acrylic,
+    /// A light blur that keeps what is behind the window recognisable (Liquid Glass).
+    Blur,
 }
 
-/// Whether this system can draw [`Backdrop::Mica`] and [`Backdrop::Acrylic`]
+/// Whether this system can draw [`Backdrop::Mica`] and [`Backdrop::Blur`]
 /// (Windows 11 22H2, build 22621, or later).
 pub fn supports_backdrops() -> bool {
     imp::supports_backdrops()
@@ -114,7 +114,7 @@ mod imp {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::Graphics::Dwm::{
-        DWMSBT_MAINWINDOW, DWMSBT_NONE, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
+        DWMSBT_MAINWINDOW, DWMSBT_NONE, DWMWA_SYSTEMBACKDROP_TYPE,
         DWMWA_USE_IMMERSIVE_DARK_MODE, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
     };
     use windows_sys::Win32::UI::Controls::MARGINS;
@@ -173,6 +173,48 @@ mod imp {
         }
     }
 
+    /// Sets the window's "accent" through the undocumented (but long-stable)
+    /// SetWindowCompositionAttribute; 3 is a plain blur behind the window, 0 is off.
+    fn set_accent(hwnd: HWND, state: u32) {
+        use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+
+        #[repr(C)]
+        struct AccentPolicy {
+            state: u32,
+            flags: u32,
+            gradient_color: u32,
+            animation_id: u32,
+        }
+        #[repr(C)]
+        struct CompositionData {
+            attribute: u32,
+            data: *mut std::ffi::c_void,
+            size: usize,
+        }
+        type SetWindowCompositionAttribute = unsafe extern "system" fn(HWND, *mut CompositionData) -> i32;
+        const WCA_ACCENT_POLICY: u32 = 19;
+
+        // SAFETY: the function is looked up by name and called with the layout
+        // Windows has used for it since Windows 7.
+        unsafe {
+            let user32 = GetModuleHandleA(c"user32.dll".as_ptr().cast());
+            if user32.is_null() {
+                return;
+            }
+            let Some(function) = GetProcAddress(user32, c"SetWindowCompositionAttribute".as_ptr().cast()) else {
+                return;
+            };
+            let function: SetWindowCompositionAttribute = std::mem::transmute(function);
+            let mut accent = AccentPolicy { state, flags: 0, gradient_color: 0, animation_id: 0 };
+            let mut data = CompositionData {
+                attribute: WCA_ACCENT_POLICY,
+                data: (&raw mut accent).cast(),
+                size: size_of::<AccentPolicy>(),
+            };
+            function(hwnd, &mut data);
+        }
+    }
+
     pub fn style_window(window: &mut Window, backdrop: Backdrop, dark: bool) -> bool {
         let Some(hwnd) = hwnd(window) else { return false };
         set_attribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, i32::from(dark));
@@ -180,19 +222,24 @@ mod imp {
         let kind = match backdrop {
             _ if !active => DWMSBT_NONE,
             Backdrop::Mica => DWMSBT_MAINWINDOW,
-            _ => DWMSBT_TRANSIENTWINDOW,
+            _ => DWMSBT_NONE,
         };
         // GPUI clears each frame to transparent, so once the frame extends over the
         // whole client area the system backdrop shows wherever the app paints nothing.
+        // Only the system backdrop (Mica) needs this; the blur accent draws behind on its own.
+        let extend = active && backdrop == Backdrop::Mica;
         let margins = MARGINS {
-            cxLeftWidth: if active { -1 } else { 0 },
-            cxRightWidth: if active { -1 } else { 0 },
-            cyTopHeight: if active { -1 } else { 0 },
-            cyBottomHeight: if active { -1 } else { 0 },
+            cxLeftWidth: if extend { -1 } else { 0 },
+            cxRightWidth: if extend { -1 } else { 0 },
+            cyTopHeight: if extend { -1 } else { 0 },
+            cyBottomHeight: if extend { -1 } else { 0 },
         };
         // SAFETY: `margins` outlives the call.
         unsafe { DwmExtendFrameIntoClientArea(hwnd, &margins) };
         set_attribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, kind);
+        // The light blur is an accent, not a system backdrop, and has to be set after
+        // the backdrop type, which would otherwise reset it.
+        set_accent(hwnd, if active && backdrop == Backdrop::Blur { 3 } else { 0 });
         active
     }
 

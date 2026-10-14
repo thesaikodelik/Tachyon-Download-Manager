@@ -37,6 +37,7 @@ pub fn engine(cx: &App) -> Arc<Engine> {
 
 pub fn init(engine: Arc<Engine>, cx: &mut App) {
     crate::theme::set_style(engine.settings().window_style);
+    crate::theme::set_mode(engine.settings().theme_mode);
     let last_clipboard = cx.read_from_clipboard().and_then(|c| c.text());
     cx.set_global(AppState {
         engine,
@@ -60,6 +61,7 @@ pub fn init(engine: Arc<Engine>, cx: &mut App) {
 /// Applies the settings that live outside the engine: window style and sign-in start.
 pub fn apply_system_settings(settings: &tachyon_engine::Settings, cx: &mut App) {
     crate::theme::set_style(settings.window_style);
+    crate::theme::set_mode(settings.theme_mode);
     cx.refresh_windows();
     if let Err(e) = crate::platform::set_start_with_system(settings.start_with_system) {
         log::warn!("could not change starting with Windows: {e}");

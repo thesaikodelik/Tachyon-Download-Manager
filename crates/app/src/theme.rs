@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use gpui::{Hsla, Window, WindowAppearance, rgb, rgba};
-use tachyon_engine::WindowStyle;
+use tachyon_engine::{ThemeMode, WindowStyle};
 
 use crate::platform::{self, Backdrop};
 
@@ -16,7 +16,22 @@ fn ca(hex: u32) -> Hsla {
 const CLEAR: u32 = 0x00000000;
 
 /// The style every window is drawn with, as an index into [`WindowStyle::ALL`].
-static STYLE: AtomicU8 = AtomicU8::new(3);
+static STYLE: AtomicU8 = AtomicU8::new(CLASSIC as u8);
+
+/// Index of `WindowStyle::Classic`, the last style.
+const CLASSIC: usize = WindowStyle::ALL.len() - 1;
+
+/// Light/dark override, as an index into [`ThemeMode::ALL`].
+static MODE: AtomicU8 = AtomicU8::new(0);
+
+pub fn set_mode(mode: ThemeMode) {
+    let index = ThemeMode::ALL.iter().position(|m| *m == mode).unwrap_or(0);
+    MODE.store(index as u8, Ordering::Relaxed);
+}
+
+fn mode() -> ThemeMode {
+    ThemeMode::ALL[usize::from(MODE.load(Ordering::Relaxed)).min(ThemeMode::ALL.len() - 1)]
+}
 
 /// Applies the user's window style. Glass styles fall back to `Solid` where the
 /// system can't draw backdrops, and only `Classic` exists off Windows. Windows pick
@@ -27,7 +42,7 @@ pub fn set_style(style: WindowStyle) {
         s if s.is_glass() && !platform::supports_backdrops() => WindowStyle::Solid,
         s => s,
     };
-    let index = WindowStyle::ALL.iter().position(|s| *s == effective).unwrap_or(3);
+    let index = WindowStyle::ALL.iter().position(|s| *s == effective).unwrap_or(CLASSIC);
     STYLE.store(index as u8, Ordering::Relaxed);
 }
 
@@ -39,7 +54,7 @@ pub fn style() -> WindowStyle {
 pub fn backdrop() -> Backdrop {
     match style() {
         WindowStyle::Mica => Backdrop::Mica,
-        WindowStyle::LiquidGlass => Backdrop::Acrylic,
+        WindowStyle::LiquidGlass | WindowStyle::LiquidSmoke => Backdrop::Blur,
         WindowStyle::Solid | WindowStyle::Classic => Backdrop::None,
     }
 }
@@ -94,6 +109,8 @@ pub struct Theme {
     pub control_height: f32,
     /// Windows 11 styles lay dialogs out as labelled boxes, like IDM.
     pub fluent: bool,
+    /// Liquid Glass: floating, lit glass panels and capsule buttons.
+    pub liquid: bool,
 }
 
 impl Theme {
@@ -132,6 +149,7 @@ impl Theme {
             radius_large: 8.,
             control_height: 28.,
             fluent: false,
+            liquid: false,
         }
     }
 
@@ -170,6 +188,58 @@ impl Theme {
             radius_large: 8.,
             control_height: 28.,
             fluent: false,
+            liquid: false,
+        }
+    }
+
+    /// Liquid Glass, as Windows "glass" themes do it: one smoky tint over a light
+    /// blur, and outlined capsule controls with only a whisper of fill.
+    fn liquid(dark: bool, smoke: bool) -> Self {
+        let accent = accent_color(dark).unwrap_or(c(if dark { 0x60cdff } else { 0x005fb8 }));
+        let (fg, bg) = if dark { (0xffffff00_u32, 0x000000_u32) } else { (0x00000000_u32, 0xffffff_u32) };
+        // Foreground (white on dark, black on light) at an alpha.
+        let ink = |alpha: u32| ca(fg | alpha);
+        let _ = bg;
+        Self {
+            dark,
+            // Clear glass barely tints what is behind; Smoke darkens or greys it.
+            window: match (smoke, dark) {
+                (false, true) => ca(0x1c1c2026),
+                (false, false) => ca(0xffffff1f),
+                (true, true) => ca(0x0e0e1073),
+                (true, false) => ca(0xd9dbe073),
+            },
+            bg: ca(CLEAR),
+            layer: if dark { ca(0xffffff08) } else { ca(0xffffff26) },
+            surface: ca(CLEAR),
+            chrome: ca(CLEAR),
+            border: ink(if dark { 0x1f } else { 0x14 }),
+            border_strong: ink(if dark { 0x38 } else { 0x26 }),
+            text: if dark { c(0xffffff) } else { ca(0x000000e6) },
+            muted: ink(if dark { 0xb8 } else { 0x99 }),
+            faint: ink(if dark { 0x73 } else { 0x66 }),
+            accent,
+            accent_hover: accent.opacity(0.9),
+            accent_soft: accent.opacity(0.2),
+            on_accent: c(if dark { 0x000000 } else { 0xffffff }),
+            hover: ink(if dark { 0x14 } else { 0x0d }),
+            pressed: ink(if dark { 0x0a } else { 0x08 }),
+            row_alt: ca(CLEAR),
+            success: c(if dark { 0x6ccb5f } else { 0x0f7b0f }),
+            danger: c(if dark { 0xff99a4 } else { 0xc42b1c }),
+            warning: c(if dark { 0xfce100 } else { 0x9d5d00 }),
+            track: ink(if dark { 0x26 } else { 0x1a }),
+            button: ink(if dark { 0x0f } else { 0x08 }),
+            button_hover: ink(if dark { 0x1f } else { 0x12 }),
+            input: ink(if dark { 0x0d } else { 0x08 }),
+            input_focus: ink(if dark { 0x1a } else { 0x0d }),
+            input_readonly: ink(if dark { 0x08 } else { 0x05 }),
+            highlight: if dark { ca(0xffffff40) } else { ca(0xffffffcc) },
+            radius: 14.,
+            radius_large: 16.,
+            control_height: 28.,
+            fluent: true,
+            liquid: true,
         }
     }
 
@@ -225,6 +295,7 @@ impl Theme {
             radius_large: if liquid { 14. } else { 8. },
             control_height: 28.,
             fluent: true,
+            liquid,
         }
     }
 
@@ -271,14 +342,21 @@ impl Theme {
             radius_large: if liquid { 14. } else { 8. },
             control_height: 28.,
             fluent: true,
+            liquid,
         }
     }
 
     pub fn for_appearance(appearance: WindowAppearance) -> Self {
-        let dark = matches!(appearance, WindowAppearance::Dark | WindowAppearance::VibrantDark);
+        let dark = match mode() {
+            ThemeMode::Light => false,
+            ThemeMode::Dark => true,
+            ThemeMode::System => matches!(appearance, WindowAppearance::Dark | WindowAppearance::VibrantDark),
+        };
         match (style(), dark) {
             (WindowStyle::Classic, false) => Self::classic_light(),
             (WindowStyle::Classic, true) => Self::classic_dark(),
+            (WindowStyle::LiquidGlass, dark) => Self::liquid(dark, false),
+            (WindowStyle::LiquidSmoke, dark) => Self::liquid(dark, true),
             (style, false) => Self::fluent_light(style),
             (style, true) => Self::fluent_dark(style),
         }

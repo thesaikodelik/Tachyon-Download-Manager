@@ -113,7 +113,7 @@ impl RenderOnce for Button {
             .gap(px(6.))
             .h(px(height))
             .px(px(if self.compact { 8. } else { 14. }))
-            .rounded(px(theme.radius))
+            .rounded(px(if theme.liquid { height / 2. } else { theme.radius }))
             .border_1()
             .border_color(border)
             .bg(bg)
@@ -203,11 +203,13 @@ impl RenderOnce for ToolbarButton {
             .h(px(54.))
             .px(px(6.))
             .rounded(px(theme.radius_large))
+            // Liquid Glass: outlined glass tiles.
+            .when(theme.liquid && !disabled, |this| this.border_1().border_color(theme.border).bg(theme.button))
             .text_size(px(11.))
             .text_color(if disabled { theme.faint } else { theme.text })
             .when(!disabled, |this| {
                 this.cursor_pointer()
-                    .hover(|s| s.bg(theme.hover))
+                    .hover(|s| s.bg(if theme.liquid { theme.button_hover } else { theme.hover }))
                     .active(|s| s.bg(theme.pressed))
                     .when_some(handler, |this, handler| {
                         this.on_click(move |event, window, cx| handler(event, window, cx))
@@ -316,6 +318,17 @@ pub fn radio_group<T: Copy + PartialEq + 'static>(
                 .child(label)
         },
     ))
+}
+
+/// One-of-many choice laid out in a row, for a few short options.
+pub fn radio_row<T: Copy + PartialEq + 'static>(
+    id: &'static str,
+    options: Vec<(T, SharedString)>,
+    selected: T,
+    theme: &Theme,
+    on_select: impl Fn(&T, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    div().flex().gap(px(18.)).child(radio_group(id, options, selected, theme, on_select)).map(|this| this)
 }
 
 /// Segmented tab strip.
@@ -527,7 +540,7 @@ pub fn dropdown_trigger(
         .gap(px(8.))
         .h(px(theme.control_height))
         .px(px(10.))
-        .rounded(px(theme.radius))
+        .rounded(px(if theme.liquid { theme.control_height / 2. } else { theme.radius }))
         .border_1()
         .border_color(if open { theme.accent } else { theme.border_strong })
         .bg(theme.input)

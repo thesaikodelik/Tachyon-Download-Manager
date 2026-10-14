@@ -301,8 +301,10 @@ impl Default for QueueSettings {
 pub enum WindowStyle {
     /// The standard Windows 11 look: a subtle wallpaper tint (Mica).
     Mica,
-    /// More translucent frosted glass with floating panels.
+    /// Clear glass over a light blur, with outlined capsule controls.
     LiquidGlass,
+    /// Liquid Glass with a smoky tint.
+    LiquidSmoke,
     /// Windows 11 colours on opaque windows, for older systems or when transparency
     /// is distracting.
     Solid,
@@ -317,13 +319,20 @@ impl Default for WindowStyle {
 }
 
 impl WindowStyle {
-    pub const ALL: [WindowStyle; 4] =
-        [WindowStyle::Mica, WindowStyle::LiquidGlass, WindowStyle::Solid, WindowStyle::Classic];
+    /// Classic stays last: it is the fallback index.
+    pub const ALL: [WindowStyle; 5] = [
+        WindowStyle::Mica,
+        WindowStyle::LiquidGlass,
+        WindowStyle::LiquidSmoke,
+        WindowStyle::Solid,
+        WindowStyle::Classic,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             WindowStyle::Mica => "Mica",
             WindowStyle::LiquidGlass => "Liquid Glass",
+            WindowStyle::LiquidSmoke => "Liquid Glass Smoke",
             WindowStyle::Solid => "Solid",
             WindowStyle::Classic => "Classic",
         }
@@ -331,7 +340,29 @@ impl WindowStyle {
 
     /// Whether the style draws over a translucent system backdrop.
     pub fn is_glass(self) -> bool {
-        matches!(self, WindowStyle::Mica | WindowStyle::LiquidGlass)
+        matches!(self, WindowStyle::Mica | WindowStyle::LiquidGlass | WindowStyle::LiquidSmoke)
+    }
+}
+
+/// Light or dark, or whatever the system uses.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeMode {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl ThemeMode {
+    pub const ALL: [ThemeMode; 3] = [ThemeMode::System, ThemeMode::Light, ThemeMode::Dark];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ThemeMode::System => "Same as Windows",
+            ThemeMode::Light => "Light",
+            ThemeMode::Dark => "Dark",
+        }
     }
 }
 
@@ -457,6 +488,7 @@ pub struct Settings {
     pub categories: Vec<CategoryDef>,
     pub queue: QueueSettings,
     pub window_style: WindowStyle,
+    pub theme_mode: ThemeMode,
     /// Closing the main window keeps Tachyon running in the notification area.
     pub close_to_tray: bool,
     /// Start Tachyon in the notification area when the user signs in.
@@ -516,6 +548,7 @@ impl Default for Settings {
             categories: default_categories(),
             queue: QueueSettings::default(),
             window_style: WindowStyle::default(),
+            theme_mode: ThemeMode::default(),
             close_to_tray: true,
             start_with_system: false,
             proxy_mode: ProxyMode::default(),

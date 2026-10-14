@@ -291,10 +291,19 @@ fn run_command(line: &str, cx: &mut App) {
             let style = match arg.trim() {
                 "mica" => tachyon_engine::WindowStyle::Mica,
                 "liquid" => tachyon_engine::WindowStyle::LiquidGlass,
+                "smoke" => tachyon_engine::WindowStyle::LiquidSmoke,
                 "solid" => tachyon_engine::WindowStyle::Solid,
                 _ => tachyon_engine::WindowStyle::Classic,
             };
             crate::theme::set_style(style);
+            cx.refresh_windows();
+        }
+        "mode" => {
+            crate::theme::set_mode(match arg.trim() {
+                "dark" => tachyon_engine::ThemeMode::Dark,
+                "light" => tachyon_engine::ThemeMode::Light,
+                _ => tachyon_engine::ThemeMode::System,
+            });
             cx.refresh_windows();
         }
         "progress-details" => {

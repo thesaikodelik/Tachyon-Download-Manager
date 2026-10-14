@@ -763,7 +763,7 @@ impl Render for TextInput {
             .w_full()
             .h(px(theme.control_height))
             .px(px(if theme.fluent { 10. } else { 8. }))
-            .rounded(px(theme.radius))
+            .rounded(px(if theme.liquid { theme.control_height / 2. } else { theme.radius }))
             .border_1()
             .text_color(theme.text)
             .text_size(px(13.))

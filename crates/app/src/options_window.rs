@@ -8,7 +8,7 @@ use gpui::{
     prelude::*, px,
 };
 use tachyon_engine::{
-    CategoryDef, DuplicateAction, Engine, ProxyMode, ServerLimit, Settings, SiteLogin, WindowStyle,
+    CategoryDef, DuplicateAction, Engine, ProxyMode, ServerLimit, Settings, SiteLogin, ThemeMode, WindowStyle,
     default_categories,
 };
 
@@ -17,7 +17,7 @@ use crate::assets::Icon;
 use crate::format;
 use crate::theme::Theme;
 use crate::widgets::text_input::TextInput;
-use crate::widgets::{Button, Checkbox, icon, radio_group, section_title, separator, stepper, truncated};
+use crate::widgets::{Button, Checkbox, icon, radio_group, radio_row, section_title, separator, stepper, truncated};
 
 const SECTIONS: [(&str, Icon); 8] = [
     ("General", Icon::Sliders),
@@ -328,6 +328,20 @@ impl OptionsWindow {
                 }),
             ))
             .child(Self::hint(style_note, theme))
+            .child(Self::row(
+                "Theme",
+                radio_row(
+                    "theme-mode",
+                    ThemeMode::ALL.iter().map(|m| (*m, SharedString::from(m.label()))).collect(),
+                    d.theme_mode,
+                    theme,
+                    cx.listener(|this, mode: &ThemeMode, _, cx| {
+                        this.draft.theme_mode = *mode;
+                        cx.notify();
+                    }),
+                ),
+                theme,
+            ))
             .child(div().h(px(6.)))
             .child(section_title("Notification area", theme))
             .child(

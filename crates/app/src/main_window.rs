@@ -502,7 +502,7 @@ impl MainWindow {
             .pl(px(if indent { 28. } else { 10. }))
             .pr(px(10.))
             .mx(px(8.))
-            .rounded(px(if theme.fluent { theme.radius } else { 6. }))
+            .rounded(px(if theme.liquid { 16. } else if theme.fluent { theme.radius } else { 6. }))
             .text_size(px(13.))
             .cursor_pointer()
             .text_color(theme.text)
@@ -819,11 +819,10 @@ impl MainWindow {
             .flex_none()
             .items_center()
             .gap(px(16.))
-            .h(px(26.))
+            .h(px(if theme.liquid { 20. } else { 26. }))
             .px(px(12.))
             .bg(theme.chrome)
-            .border_t_1()
-            .border_color(theme.border)
+            .when(!theme.liquid, |this| this.border_t_1().border_color(theme.border))
             .text_size(px(12.))
             .text_color(theme.muted)
             .child(format!(
@@ -1036,10 +1035,13 @@ impl Render for MainWindow {
                                         }),
                                     )
                                     .child(list),
-                            ),
+                            )
+                            // Windows 11 styles: the list's panel runs to the bottom corner,
+                            // with the status line inside it.
+                            .when(theme.fluent, |this| this.child(self.render_status_bar(&theme))),
                     ),
             )
-            .child(self.render_status_bar(&theme))
+            .when(!theme.fluent, |this| this.child(self.render_status_bar(&theme)))
             .when_some(self.context_menu.as_ref(), |this, menu| {
                 this.child(self.render_context_menu(menu, &theme, cx))
             })
