@@ -157,8 +157,75 @@ chrome.downloads.onCreated.addListener(async (item) => {
   }
 });
 
-// Popup API.
-chrome.runtime.onMessage.addListener((message, _sender, reply) => {
+// ---- Media files each tab played, for the video button ----
+// Kept in session storage, since the service worker can be stopped at any time.
+
+const MEDIA_EXTENSIONS = new Set(["mp4", "m4v", "webm", "mov", "mkv", "avi", "flv", "3gp", "mp3", "m4a", "ogg", "opus", "flac", "wav"]);
+// Smaller complete files are clicks, chimes and ad pixels.
+const MIN_MEDIA_BYTES = 512 * 1024;
+const MAX_MEDIA_PER_TAB = 20;
+
+function header(details, name) {
+  return details.responseHeaders?.find((h) => h.name.toLowerCase() === name)?.value || "";
+}
+
+function mediaSize(details) {
+  // "bytes 0-999/123456" for a ranged response.
+  const range = header(details, "content-range").match(/\/(\d+)\s*$/);
+  if (range) return Number(range[1]);
+  const length = Number(header(details, "content-length"));
+  return details.statusCode === 200 && length > 0 ? length : 0;
+}
+
+function isMedia(details) {
+  const type = header(details, "content-type").toLowerCase();
+  if (type.startsWith("video/") || type.startsWith("audio/")) return !type.includes("mpegurl");
+  if (type && !type.startsWith("application/octet-stream") && !type.startsWith("binary/")) return false;
+  try {
+    const name = new URL(details.url).pathname.split("/").pop() || "";
+    return MEDIA_EXTENSIONS.has((name.split(".").pop() || "").toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+chrome.webRequest.onHeadersReceived.addListener(
+  async (details) => {
+    if (details.tabId < 0 || details.statusCode >= 300 || !isMedia(details)) return;
+    const size = mediaSize(details);
+    if (size && size < MIN_MEDIA_BYTES) return;
+    const key = `media:${details.tabId}`;
+    const list = (await chrome.storage.session.get(key))[key] || [];
+    const known = list.find((m) => m.url === details.url);
+    if (known) {
+      known.size ||= size;
+    } else {
+      list.push({ url: details.url, size });
+      if (list.length > MAX_MEDIA_PER_TAB) list.shift();
+    }
+    await chrome.storage.session.set({ [key]: list });
+  },
+  { urls: ["<all_urls>"], types: ["media", "xmlhttprequest", "other"] },
+  ["responseHeaders"],
+);
+
+// A new page in the tab starts a new list.
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (change.url) chrome.storage.session.remove(`media:${tabId}`);
+});
+chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(`media:${tabId}`));
+
+// Popup and video button API.
+chrome.runtime.onMessage.addListener((message, sender, reply) => {
+  if (message?.type === "media-list") {
+    const key = `media:${sender.tab?.id}`;
+    chrome.storage.session.get(key).then((s) => reply(s[key] || []));
+    return true;
+  }
+  if (message?.type === "download-video") {
+    sendToTachyon({ url: message.url, referrer: message.referrer, filename: message.filename }).then(reply);
+    return true;
+  }
   if (message?.type === "status") {
     fetchConfig().then((config) => reply({ connected: Boolean(config), capture: Boolean(config?.capture) }));
     return true;

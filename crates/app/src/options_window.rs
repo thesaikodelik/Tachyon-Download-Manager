@@ -93,7 +93,6 @@ pub struct OptionsWindow {
     logins: Vec<LoginRow>,
     limits: Vec<LimitRow>,
     error: Option<String>,
-    saved: bool,
 }
 
 fn input(cx: &mut Context<OptionsWindow>, placeholder: &str, text: impl Into<SharedString>) -> Entity<TextInput> {
@@ -175,7 +174,6 @@ impl OptionsWindow {
             draft,
             tab: 0,
             error: None,
-            saved: false,
         }
     }
 
@@ -290,13 +288,11 @@ impl OptionsWindow {
                 crate::app::apply_system_settings(&settings, cx);
                 self.draft = settings;
                 self.error = None;
-                self.saved = true;
                 cx.notify();
                 true
             }
             Err(e) => {
                 self.error = Some(e);
-                self.saved = false;
                 cx.notify();
                 false
             }
@@ -1159,10 +1155,7 @@ impl OptionsWindow {
                             .flex_1()
                             .min_w_0()
                             .text_size(px(12.))
-                            .when_some(self.error.clone(), |this, e| this.text_color(theme.danger).child(e))
-                            .when(self.error.is_none() && self.saved, |this| {
-                                this.text_color(theme.success).font_weight(FontWeight::MEDIUM).child("Saved")
-                            }),
+                            .when_some(self.error.clone(), |this, e| this.text_color(theme.danger).child(e)),
                     )
                     .child(Button::new("ok", "OK").primary().on_click(cx.listener(|this, _, window, cx| {
                         if this.apply(cx) {
