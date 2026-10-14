@@ -305,16 +305,6 @@ fn run_command(line: &str, cx: &mut App) {
             });
             cx.refresh_windows();
         }
-        "brand" => {
-            let (hovered, open) = match arg.trim() {
-                "hover" => (true, false),
-                "open" => (true, true),
-                _ => (false, false),
-            };
-            for w in windows.iter().filter_map(|w| w.downcast::<MainWindow>()) {
-                w.update(cx, |m, _, cx| m.brand.update(cx, |b, cx| b.dev_set(hovered, open, cx))).ok();
-            }
-        }
         "progress-details" => {
             for w in windows.iter().filter_map(|w| w.downcast::<ProgressWindow>()) {
                 w.update(cx, |p, window, cx| p.toggle_details(window, cx)).ok();

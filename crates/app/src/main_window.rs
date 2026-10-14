@@ -152,7 +152,7 @@ impl MainWindow {
             anchor: None,
             scroll: UniformListScrollHandle::new(),
             context_menu: None,
-            brand: cx.new(|_| Brand::default()),
+            brand: cx.new(|_| Brand),
             categories_open: true,
             queue_running: false,
             total_speed: 0,
