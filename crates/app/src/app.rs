@@ -23,6 +23,8 @@ use crate::scheduler_window::SchedulerWindow;
 pub struct AppState {
     pub engine: Arc<Engine>,
     main_window: Option<WindowHandle<MainWindow>>,
+    /// The main window's native handle, for placing dialogs over it.
+    main_hwnd: Option<usize>,
     progress_windows: HashMap<DownloadId, WindowHandle<ProgressWindow>>,
     options_window: Option<WindowHandle<OptionsWindow>>,
     scheduler_window: Option<WindowHandle<SchedulerWindow>>,
@@ -42,6 +44,7 @@ pub fn init(engine: Arc<Engine>, cx: &mut App) {
     cx.set_global(AppState {
         engine,
         main_window: None,
+        main_hwnd: None,
         progress_windows: HashMap::new(),
         options_window: None,
         scheduler_window: None,
@@ -198,15 +201,12 @@ pub fn open_styled<V: Render + 'static>(
 
 /// Where a window of `size` opens: centred over the main window while it is on
 /// screen, as Windows dialogs are, otherwise in the middle of the screen.
+///
+/// The main window's position comes from Windows rather than GPUI, which can't
+/// read a window that is busy, e.g. handling the click that opens the dialog.
 pub fn centered(size: Size<Pixels>, cx: &mut App) -> Bounds<Pixels> {
-    let main = cx.try_global::<AppState>().and_then(|state| state.main_window);
-    let over_main = main.and_then(|handle| {
-        handle
-            .update(cx, |_, window, _| crate::platform::is_on_screen(window).then(|| window.bounds()))
-            .ok()
-            .flatten()
-    });
-    match over_main {
+    let main = cx.try_global::<AppState>().and_then(|state| state.main_hwnd);
+    match main.and_then(crate::platform::shown_window_rect) {
         Some(main) => Bounds::new(
             point(
                 main.origin.x + (main.size.width - size.width) / 2.,
@@ -281,6 +281,8 @@ pub fn open_main_window_with(show: bool, cx: &mut App) {
         ..Default::default()
     };
     let opened = open_styled(options, cx, |window, cx| {
+        let hwnd = crate::platform::native_handle(window);
+        cx.global_mut::<AppState>().main_hwnd = hwnd;
         // With a notification-area icon, closing the window only hides it, as in IDM.
         window.on_window_should_close(cx, |window, cx| {
             let keep_running = crate::tray::is_active() && engine(cx).settings().close_to_tray;

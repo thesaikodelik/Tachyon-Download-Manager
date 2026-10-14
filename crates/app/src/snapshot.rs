@@ -305,6 +305,12 @@ fn run_command(line: &str, cx: &mut App) {
             });
             cx.refresh_windows();
         }
+        // Opens About from inside the main window's update, as a click on the logo does.
+        "about-from-main" => {
+            for w in windows.iter().filter_map(|w| w.downcast::<MainWindow>()) {
+                w.update(cx, |_, _, cx| crate::brand::show_about(cx)).ok();
+            }
+        }
         "progress-details" => {
             for w in windows.iter().filter_map(|w| w.downcast::<ProgressWindow>()) {
                 w.update(cx, |p, window, cx| p.toggle_details(window, cx)).ok();

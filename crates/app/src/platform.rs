@@ -116,9 +116,10 @@ pub fn move_window_by(window: &Window, dy: gpui::Pixels) {
     imp::move_window_by(window, dy)
 }
 
-/// Whether `window` is showing (not hidden in the notification area, not minimized).
-pub fn is_on_screen(window: &Window) -> bool {
-    imp::is_on_screen(window)
+/// The bounds, in logical pixels, of the window with native `handle` if it is on
+/// screen (not hidden in the notification area, not minimized).
+pub fn shown_window_rect(handle: usize) -> Option<gpui::Bounds<gpui::Pixels>> {
+    imp::shown_window_rect(handle)
 }
 
 /// Hides a window without destroying it, so the app keeps running in the tray.
@@ -481,10 +482,27 @@ mod imp {
         }
     }
 
-    pub fn is_on_screen(window: &Window) -> bool {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
-        // SAFETY: plain queries on a live window handle.
-        hwnd(window).is_some_and(|hwnd| unsafe { IsWindowVisible(hwnd) != 0 && IsIconic(hwnd) == 0 })
+    pub fn shown_window_rect(handle: usize) -> Option<gpui::Bounds<gpui::Pixels>> {
+        use windows_sys::Win32::Foundation::RECT;
+        use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsIconic, IsWindowVisible};
+        let hwnd = handle as HWND;
+        // SAFETY: plain queries; a stale handle just fails them.
+        unsafe {
+            if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
+                return None;
+            }
+            let mut rect: RECT = std::mem::zeroed();
+            if GetWindowRect(hwnd, &mut rect) == 0 {
+                return None;
+            }
+            let scale = GetDpiForWindow(hwnd).max(96) as f32 / 96.;
+            let px = |v: i32| gpui::px(v as f32 / scale);
+            Some(gpui::Bounds::new(
+                gpui::point(px(rect.left), px(rect.top)),
+                gpui::size(px(rect.right - rect.left), px(rect.bottom - rect.top)),
+            ))
+        }
     }
 
     pub fn hide_window(window: &Window) {
@@ -562,8 +580,8 @@ mod imp {
 
     pub fn hide_window(_: &Window) {}
 
-    pub fn is_on_screen(_: &Window) -> bool {
-        true
+    pub fn shown_window_rect(_: usize) -> Option<gpui::Bounds<gpui::Pixels>> {
+        None
     }
 
     pub fn is_cloaked(_: &Window) -> bool {
