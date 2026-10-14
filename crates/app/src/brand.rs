@@ -1,7 +1,7 @@
 //! The "Tachyon" mark in the toolbar and the About window it opens, which credits
 //! the macOS original first.
 
-use gpui::{App, AppContext, Context, FontWeight, Window, div, prelude::*, px, size};
+use gpui::{AnyElement, App, AppContext, Context, FontWeight, Hsla, Window, div, prelude::*, px, size};
 
 use crate::app;
 use crate::assets::Icon;
@@ -14,8 +14,55 @@ const WINDOWS_AUTHOR: &str = "thesaikodelik";
 const WINDOWS_URL: &str = "https://github.com/thesaikodelik/Tachyon-Download-Manager";
 const WORD: &str = "Tachyon";
 
+const BOLT_SIZE: f32 = 18.;
+
+/// The mark, whose bolt fills from the bottom with the overall progress of running
+/// downloads, like a battery charging.
 #[derive(Default)]
-pub struct Brand;
+pub struct Brand {
+    /// Overall progress of the running downloads (0 to 1); None when nothing runs.
+    progress: Option<f32>,
+}
+
+impl Brand {
+    pub fn set_progress(&mut self, progress: Option<f32>, cx: &mut Context<Self>) {
+        let progress = progress.map(|p| p.clamp(0., 1.));
+        // Only redraw for visible changes.
+        let changed = match (self.progress, progress) {
+            (Some(a), Some(b)) => (a - b).abs() > 0.002,
+            (a, b) => a.is_some() != b.is_some(),
+        };
+        if changed {
+            self.progress = progress;
+            cx.notify();
+        }
+    }
+}
+
+/// The bolt: solid, or while downloading a faint outline-coloured bolt with the
+/// filled part rising from the bottom.
+fn bolt(progress: Option<f32>, color: Hsla) -> AnyElement {
+    let Some(progress) = progress else {
+        return icon(Icon::Bolt, px(BOLT_SIZE), color).into_any_element();
+    };
+    div()
+        .relative()
+        .flex_none()
+        .size(px(BOLT_SIZE))
+        .child(icon(Icon::Bolt, px(BOLT_SIZE), color.opacity(0.28)))
+        .child(
+            // A window onto the bottom of a full-colour bolt, as tall as the progress.
+            div()
+                .absolute()
+                .left_0()
+                .bottom_0()
+                .w_full()
+                .h(px(BOLT_SIZE * progress))
+                .overflow_hidden()
+                .child(div().absolute().left_0().bottom_0().child(icon(Icon::Bolt, px(BOLT_SIZE), color))),
+        )
+        .into_any_element()
+}
 
 impl Render for Brand {
     fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
@@ -30,7 +77,7 @@ impl Render for Brand {
             .cursor_pointer()
             .text_color(theme.icon)
             .on_click(|_, _, cx| show_about(cx))
-            .child(icon(Icon::Bolt, px(18.), theme.icon))
+            .child(bolt(self.progress, theme.icon))
             .child(div().text_size(px(15.)).font_weight(FontWeight::SEMIBOLD).child(WORD))
     }
 }

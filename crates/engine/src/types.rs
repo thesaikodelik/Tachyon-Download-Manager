@@ -171,7 +171,7 @@ pub struct ConnectionSnapshot {
 }
 
 /// A point-in-time view of a download for the UI.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct DownloadSnapshot {
     pub id: DownloadId,
     pub url: String,

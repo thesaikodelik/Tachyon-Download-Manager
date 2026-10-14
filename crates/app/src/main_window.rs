@@ -27,6 +27,25 @@ actions!(
 
 const CONTEXT: &str = "MainWindow";
 const ROW_HEIGHT: f32 = 30.;
+
+/// How far the current batch of downloads is, all together: everything that has run
+/// since downloading last started (finished ones included, so the bolt never drops
+/// back when one completes) plus what waits in a running queue. None when idle.
+fn batch_progress(downloads: &[DownloadSnapshot], queue_running: bool, batch: &mut BTreeSet<DownloadId>) -> Option<f32> {
+    let waiting = |d: &DownloadSnapshot| queue_running && d.in_queue && d.status != DownloadStatus::Completed;
+    if !downloads.iter().any(|d| d.status.is_active() || waiting(d)) {
+        batch.clear();
+        return None;
+    }
+    batch.extend(downloads.iter().filter(|d| d.status.is_active() || waiting(d)).map(|d| d.id));
+    // Sizes not yet known (or never told) can't count towards a fraction.
+    let (done, total) = downloads
+        .iter()
+        .filter(|d| batch.contains(&d.id))
+        .filter_map(|d| d.size.map(|size| (d.downloaded.min(size), size)))
+        .fold((0u64, 0u64), |(done, total), (d, s)| (done + d, total + s));
+    Some(if total > 0 { done as f32 / total as f32 } else { 0. })
+}
 const SIDEBAR_WIDTH: f32 = 200.;
 
 pub fn bind_keys(cx: &mut App) {
@@ -125,6 +144,8 @@ pub struct MainWindow {
     queue_running: bool,
     total_speed: u64,
     pub(crate) brand: Entity<Brand>,
+    /// Downloads counted in the bolt's progress (see `batch_progress`).
+    batch: BTreeSet<DownloadId>,
     _poll: Task<()>,
 }
 
@@ -152,7 +173,8 @@ impl MainWindow {
             anchor: None,
             scroll: UniformListScrollHandle::new(),
             context_menu: None,
-            brand: cx.new(|_| Brand),
+            brand: cx.new(|_| Brand::default()),
+            batch: BTreeSet::new(),
             categories_open: true,
             queue_running: false,
             total_speed: 0,
@@ -167,6 +189,9 @@ impl MainWindow {
         self.queue_running = self.engine.is_queue_running();
         self.total_speed = self.engine.total_speed();
         let ids: BTreeSet<DownloadId> = self.downloads.iter().map(|d| d.id).collect();
+        self.batch.retain(|id| ids.contains(id));
+        let progress = batch_progress(&self.downloads, self.queue_running, &mut self.batch);
+        self.brand.update(cx, |brand, cx| brand.set_progress(progress, cx));
         self.selected.retain(|id| ids.contains(id));
         self.rebuild_rows();
         cx.notify();
@@ -1051,5 +1076,41 @@ impl Render for MainWindow {
                 this.child(self.render_context_menu(menu, &theme, cx))
             }),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use tachyon_engine::{DownloadSnapshot, DownloadStatus};
+
+    use super::batch_progress;
+
+    fn download(id: u64, status: DownloadStatus, downloaded: u64, size: u64) -> DownloadSnapshot {
+        DownloadSnapshot { id, status, downloaded, size: Some(size), ..Default::default() }
+    }
+
+    #[test]
+    fn finished_downloads_keep_counting_until_the_batch_ends() {
+        let mut batch = BTreeSet::new();
+        let running = [download(1, DownloadStatus::Downloading, 50, 100), download(2, DownloadStatus::Downloading, 0, 100)];
+        assert_eq!(batch_progress(&running, false, &mut batch), Some(0.25));
+        // The first finishes: the bolt must not drop back.
+        let one_done = [download(1, DownloadStatus::Completed, 100, 100), download(2, DownloadStatus::Downloading, 50, 100)];
+        assert_eq!(batch_progress(&one_done, false, &mut batch), Some(0.75));
+        // Everything done: idle, and the next batch starts afresh.
+        let all_done = [download(1, DownloadStatus::Completed, 100, 100), download(2, DownloadStatus::Completed, 100, 100)];
+        assert_eq!(batch_progress(&all_done, false, &mut batch), None);
+        assert!(batch.is_empty());
+    }
+
+    #[test]
+    fn a_running_queue_counts_what_still_waits() {
+        let mut batch = BTreeSet::new();
+        let mut waiting = download(2, DownloadStatus::Stopped, 0, 300);
+        waiting.in_queue = true;
+        let items = [download(1, DownloadStatus::Downloading, 100, 100), waiting];
+        assert_eq!(batch_progress(&items, true, &mut batch), Some(0.25));
     }
 }
