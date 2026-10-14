@@ -192,8 +192,8 @@ impl Theme {
         }
     }
 
-    /// Liquid Glass, as Windows "glass" themes do it: one smoky tint over a light
-    /// blur, and outlined capsule controls with only a whisper of fill.
+    /// Liquid Glass, as Windows "glass" themes do it: a smoky tint over a light blur,
+    /// and outlined capsule controls with only a whisper of fill.
     fn liquid(dark: bool, smoke: bool) -> Self {
         let accent = accent_color(dark).unwrap_or(c(if dark { 0x60cdff } else { 0x005fb8 }));
         let (fg, bg) = if dark { (0xffffff00_u32, 0x000000_u32) } else { (0x00000000_u32, 0xffffff_u32) };
@@ -202,12 +202,12 @@ impl Theme {
         let _ = bg;
         Self {
             dark,
-            // Clear glass barely tints what is behind; Smoke darkens or greys it.
+            // A smoky tint over the blur; Smoke is the denser one.
             window: match (smoke, dark) {
-                (false, true) => ca(0x1c1c2026),
-                (false, false) => ca(0xffffff1f),
-                (true, true) => ca(0x0e0e1073),
-                (true, false) => ca(0xd9dbe073),
+                (false, true) => ca(0x0e0e1073),
+                (false, false) => ca(0xd9dbe073),
+                (true, true) => ca(0x0e0e10a6),
+                (true, false) => ca(0xd9dbe0a6),
             },
             bg: ca(CLEAR),
             layer: if dark { ca(0xffffff08) } else { ca(0xffffff26) },
