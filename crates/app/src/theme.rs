@@ -204,7 +204,7 @@ impl Theme {
             // A smoky tint over the blur: pale for Liquid Glass, dark for Smoke.
             window: if dark { ca(0x0e0e1073) } else { ca(0xffffff40) },
             bg: ca(CLEAR),
-            layer: if dark { ca(0xffffff08) } else { ca(0xffffff26) },
+            layer: if dark { ca(0xffffff08) } else { ca(0xffffff59) },
             surface: ca(CLEAR),
             chrome: ca(CLEAR),
             border: ink(if dark { 0x1f } else { 0x14 }),
