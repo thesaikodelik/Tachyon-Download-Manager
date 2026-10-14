@@ -19,6 +19,7 @@ use crate::limiter::RateLimiter;
 use crate::persist::{self, DownloadRecord, StateFile};
 use crate::task::{self, TaskEnv, TaskInput, TaskOutcome, TaskShared};
 use crate::types::{
+    BrowserRule,
     AddRequest, CompletionOptions, DayTime, DownloadDetails, DownloadId, DownloadSnapshot,
     DownloadStatus, EngineEvent, PostAction, ProbeInfo, RequestSpec, Settings,
 };
@@ -41,6 +42,76 @@ struct Inner {
     dirty: AtomicBool,
     integration: Mutex<Option<(u16, CancellationToken)>>,
     quota: Mutex<QuotaState>,
+    /// When each program's extension last made contact, by lowercase file name.
+    browsers_seen: Mutex<HashMap<String, std::time::Instant>>,
+}
+
+/// An extension asks for its settings at least this often while its browser runs.
+const EXTENSION_CHECK_IN: Duration = Duration::from_secs(6 * 60);
+
+/// The lowercase file name of a program, such as `chrome.exe`.
+fn exe_name(program: &std::path::Path) -> Option<String> {
+    program.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase())
+}
+
+/// A readable name for a program nobody named yet: `chrome.exe` becomes `Chrome`.
+fn program_title(exe: &str) -> String {
+    let stem = exe.strip_suffix(".exe").unwrap_or(exe);
+    let mut chars = stem.chars();
+    chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
+}
+
+/// The engine's side of the browser endpoint.
+struct IntegrationHost(std::sync::Weak<Inner>);
+
+impl integration::Host for IntegrationHost {
+    fn seen(&self, program: Option<&std::path::Path>) {
+        let (Some(inner), Some(exe)) = (self.0.upgrade(), program.and_then(exe_name)) else { return };
+        inner.browsers_seen.lock().insert(exe.clone(), std::time::Instant::now());
+        // A browser whose extension shows up for the first time joins the list.
+        let known = inner.settings.read().browsers.iter().any(|b| b.exe.eq_ignore_ascii_case(&exe));
+        if !known {
+            let mut settings = inner.settings.write();
+            let path = program.map(std::path::Path::to_path_buf);
+            settings.browsers.push(BrowserRule { name: program_title(&exe), exe, path, enabled: true });
+            if let Err(e) = persist::save_settings(&inner.data_dir, &settings) {
+                log::warn!("saving the new browser failed: {e}");
+            }
+        }
+    }
+
+    fn capture(&self, request: AddRequest, program: Option<&std::path::Path>) -> bool {
+        let Some(inner) = self.0.upgrade() else { return false };
+        {
+            let settings = inner.settings.read();
+            if settings.is_excluded_site(&request.request.url) {
+                return false;
+            }
+            if program.and_then(exe_name).is_some_and(|exe| !settings.captures_from(&exe)) {
+                return false;
+            }
+        }
+        if inner.settings.read().start_captured_immediately {
+            if let Err(e) = inner.add(request) {
+                log::warn!("captured download rejected: {e}");
+            }
+        } else {
+            inner.push_event(EngineEvent::Captured(Box::new(request)));
+        }
+        true
+    }
+
+    fn config(&self, program: Option<&std::path::Path>) -> integration::ClientConfig {
+        let Some(inner) = self.0.upgrade() else {
+            return integration::ClientConfig { capture: false, extensions: Vec::new(), excluded_sites: Vec::new() };
+        };
+        let settings = inner.settings.read();
+        integration::ClientConfig {
+            capture: program.and_then(exe_name).is_none_or(|exe| settings.captures_from(&exe)),
+            extensions: settings.capture_extensions.clone(),
+            excluded_sites: settings.excluded_sites.clone(),
+        }
+    }
 }
 
 /// Bytes received in the current download-limit period.
@@ -112,6 +183,7 @@ impl Engine {
             events: Mutex::new(Vec::new()),
             dirty: AtomicBool::new(false),
             integration: Mutex::new(None),
+            browsers_seen: Mutex::new(HashMap::new()),
             quota: Mutex::new(QuotaState::default()),
         });
         inner.sync_integration();
@@ -419,6 +491,15 @@ impl Engine {
 
     pub fn is_queue_running(&self) -> bool {
         self.inner.state.lock().queue_running
+    }
+
+    /// The programs (lowercase file names) whose Tachyon extension is in touch.
+    pub fn connected_browsers(&self) -> Vec<String> {
+        let seen = self.inner.browsers_seen.lock();
+        seen.iter()
+            .filter(|(_, at)| at.elapsed() < EXTENSION_CHECK_IN)
+            .map(|(exe, _)| exe.clone())
+            .collect()
     }
 
     pub fn total_speed(&self) -> u64 {
@@ -917,22 +998,8 @@ impl Inner {
             return;
         }
         let cancel = CancellationToken::new();
-        let weak = Arc::downgrade(self);
-        let sink: integration::CaptureSink = Arc::new(move |request: AddRequest| {
-            let Some(inner) = weak.upgrade() else { return false };
-            if inner.settings.read().is_excluded_site(&request.request.url) {
-                return false;
-            }
-            if inner.settings.read().start_captured_immediately {
-                if let Err(e) = inner.add(request) {
-                    log::warn!("captured download rejected: {e}");
-                }
-            } else {
-                inner.push_event(EngineEvent::Captured(Box::new(request)));
-            }
-            true
-        });
-        self.handle.spawn(integration::serve(port, cancel.clone(), sink));
+        let host = Arc::new(IntegrationHost(Arc::downgrade(self)));
+        self.handle.spawn(integration::serve(port, cancel.clone(), host));
         *current = Some((port, cancel));
     }
 }

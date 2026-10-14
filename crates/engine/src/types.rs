@@ -501,6 +501,11 @@ pub struct Settings {
     pub ignore_modified_on_resume: bool,
     /// Sites whose downloads the browser extension leaves to the browser.
     pub excluded_sites: Vec<String>,
+    /// Programs whose downloads are taken over, as IDM's list of browsers. A browser
+    /// whose extension connects for the first time is added, enabled.
+    pub browsers: Vec<BrowserRule>,
+    /// File types the extension takes over from the browser, without dots.
+    pub capture_extensions: Vec<String>,
     pub play_sounds: bool,
     /// Scan finished files for viruses.
     pub virus_scan: bool,
@@ -510,6 +515,23 @@ pub struct Settings {
     /// Where unfinished downloads are kept; empty keeps them next to the final file.
     pub temp_dir: Option<PathBuf>,
 }
+
+/// A program whose downloads Tachyon takes over (or not).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BrowserRule {
+    /// Shown in Options.
+    pub name: String,
+    /// The program's file name, such as `chrome.exe`; matched ignoring case.
+    pub exe: String,
+    /// Where the program is, for its icon; unknown for some.
+    pub path: Option<PathBuf>,
+    pub enabled: bool,
+}
+
+/// File types taken over from browsers unless the user changes the list.
+pub const DEFAULT_CAPTURE_EXTENSIONS: &str = "zip rar 7z gz tgz bz2 xz tar iso img exe msi msix msixbundle appx apk \
+     mp4 m4v mkv mov avi wmv webm flv 3gp mpg mpeg mp3 m4a flac wav aac ogg opus wma pdf epub";
 
 /// The platform part of the default User-Agent, as browsers on this system send it.
 const PLATFORM_UA: &str = if cfg!(windows) {
@@ -539,7 +561,7 @@ impl Default for Settings {
             proxy: String::new(),
             show_progress_window: true,
             show_complete_dialog: true,
-            monitor_clipboard: false,
+            monitor_clipboard: true,
             browser_integration: true,
             integration_port: 7311,
             start_captured_immediately: false,
@@ -564,6 +586,8 @@ impl Default for Settings {
                 "download.windowsupdate.com".into(),
                 "*.download.windowsupdate.com".into(),
             ],
+            browsers: Vec::new(),
+            capture_extensions: DEFAULT_CAPTURE_EXTENSIONS.split_whitespace().map(str::to_string).collect(),
             play_sounds: false,
             virus_scan: false,
             virus_scanner: String::new(),
@@ -604,6 +628,15 @@ impl Settings {
             .is_some_and(|host| self.excluded_sites.iter().any(|p| host_matches(p, &host)))
     }
 
+    /// Whether downloads sent by the program `exe` are taken over. Programs not in
+    /// the list yet are, like a browser whose extension was just installed.
+    pub fn captures_from(&self, exe: &str) -> bool {
+        self.browsers
+            .iter()
+            .find(|b| b.exe.eq_ignore_ascii_case(exe))
+            .is_none_or(|b| b.enabled)
+    }
+
     /// Clamps values that would break the engine.
     pub fn sanitized(mut self) -> Self {
         self.max_connections = self.max_connections.clamp(1, Self::MAX_CONNECTIONS_LIMIT);
@@ -618,6 +651,12 @@ impl Settings {
         self.server_limits.retain(|l| !l.server.trim().is_empty());
         self.site_logins.retain(|l| !l.site.trim().is_empty());
         self.excluded_sites.retain(|s| !s.trim().is_empty());
+        let mut seen = std::collections::HashSet::new();
+        self.browsers.retain(|b| !b.exe.trim().is_empty() && seen.insert(b.exe.to_ascii_lowercase()));
+        for ext in &mut self.capture_extensions {
+            *ext = ext.trim().trim_start_matches('.').to_ascii_lowercase();
+        }
+        self.capture_extensions.retain(|e| !e.is_empty());
         self.quota.megabytes = self.quota.megabytes.max(1);
         self.quota.hours = self.quota.hours.clamp(1, 24 * 31);
         // Builds before Windows support saved the macOS default User-Agent everywhere.

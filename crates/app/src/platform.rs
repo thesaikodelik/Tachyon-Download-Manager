@@ -92,6 +92,12 @@ pub fn set_start_with_system(enabled: bool) -> Result<(), String> {
     imp::set_start_with_system(enabled)
 }
 
+/// The web browsers installed for this user, as (name, program) pairs, from the list
+/// Windows keeps for its "Default apps" settings.
+pub fn installed_browsers() -> Vec<(String, std::path::PathBuf)> {
+    imp::installed_browsers()
+}
+
 /// Plays the system sound for a finished (or failed) download.
 pub fn play_sound(success: bool) {
     imp::play_sound(success)
@@ -420,6 +426,87 @@ mod imp {
         unsafe { MessageBeep(if success { MB_ICONASTERISK } else { MB_ICONHAND }) };
     }
 
+    pub fn installed_browsers() -> Vec<(String, std::path::PathBuf)> {
+        use windows_sys::Win32::System::Registry::{
+            HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, RRF_RT_REG_SZ, RegCloseKey, RegEnumKeyExW,
+            RegGetValueW, RegOpenKeyExW,
+        };
+
+        fn wide(s: &str) -> Vec<u16> {
+            s.encode_utf16().chain(Some(0)).collect()
+        }
+        /// The default value of `key\sub`.
+        fn default_value(key: HKEY, sub: &str) -> Option<String> {
+            let sub = wide(sub);
+            let mut buf = [0u16; 1024];
+            let mut size = (buf.len() * 2) as u32;
+            // SAFETY: the buffer size is passed in bytes.
+            let status = unsafe {
+                RegGetValueW(key, sub.as_ptr(), std::ptr::null(), RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr().cast(), &mut size)
+            };
+            (status == 0).then(|| String::from_utf16_lossy(&buf[..(size as usize / 2).saturating_sub(1)]))
+        }
+        /// The program in a command line such as `"C:\x\chrome.exe" --flag`.
+        fn program_of(command: &str) -> Option<std::path::PathBuf> {
+            let command = command.trim();
+            let path = match command.strip_prefix('"') {
+                Some(rest) => rest.split('"').next()?,
+                None => {
+                    let end = command.to_ascii_lowercase().find(".exe")? + 4;
+                    &command[..end]
+                }
+            };
+            Some(std::path::PathBuf::from(path))
+        }
+
+        let mut found: Vec<(String, std::path::PathBuf)> = Vec::new();
+        let places = [
+            (HKEY_CURRENT_USER, "Software\\Clients\\StartMenuInternet"),
+            (HKEY_LOCAL_MACHINE, "Software\\Clients\\StartMenuInternet"),
+            (HKEY_LOCAL_MACHINE, "Software\\WOW6432Node\\Clients\\StartMenuInternet"),
+        ];
+        for (root, path) in places {
+            let mut key: HKEY = std::ptr::null_mut();
+            // SAFETY: NUL-terminated path; the key is closed below.
+            if unsafe { RegOpenKeyExW(root, wide(path).as_ptr(), 0, KEY_READ, &mut key) } != 0 {
+                continue;
+            }
+            for index in 0.. {
+                let mut name = [0u16; 256];
+                let mut len = name.len() as u32;
+                // SAFETY: `len` holds the buffer size in characters.
+                let status = unsafe {
+                    RegEnumKeyExW(
+                        key,
+                        index,
+                        name.as_mut_ptr(),
+                        &mut len,
+                        std::ptr::null(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                    )
+                };
+                if status != 0 {
+                    break;
+                }
+                let sub = String::from_utf16_lossy(&name[..len as usize]);
+                let Some(program) = default_value(key, &format!("{sub}\\shell\\open\\command")).as_deref().and_then(program_of)
+                else {
+                    continue;
+                };
+                let title = default_value(key, &sub).filter(|t| !t.is_empty()).unwrap_or(sub);
+                let same = |p: &std::path::PathBuf| p.file_name().map(|n| n.to_ascii_lowercase()) == program.file_name().map(|n| n.to_ascii_lowercase());
+                if program.is_file() && !found.iter().any(|(_, p)| same(p)) {
+                    found.push((title, program));
+                }
+            }
+            // SAFETY: opened above.
+            unsafe { RegCloseKey(key) };
+        }
+        found
+    }
+
     pub fn set_start_with_system(enabled: bool) -> Result<(), String> {
         use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, REG_SZ, RegDeleteKeyValueW, RegSetKeyValueW};
 
@@ -594,6 +681,10 @@ mod imp {
 
     pub fn set_start_with_system(_: bool) -> Result<(), String> {
         Ok(())
+    }
+
+    pub fn installed_browsers() -> Vec<(String, std::path::PathBuf)> {
+        Vec::new()
     }
 
     pub fn hide_window(_: &Window) {}

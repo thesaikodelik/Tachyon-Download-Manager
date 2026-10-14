@@ -15,6 +15,7 @@ mod integration;
 mod limiter;
 mod persist;
 mod segment;
+mod sender;
 mod task;
 mod types;
 

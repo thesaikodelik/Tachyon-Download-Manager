@@ -22,7 +22,7 @@ percent-encoding.workspace = true
 log.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_IO", "Win32_System_Ioctl"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_IO", "Win32_System_Ioctl", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_System_Threading"] }
 
 [dev-dependencies]
 env_logger.workspace = true

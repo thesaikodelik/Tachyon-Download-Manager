@@ -7,7 +7,11 @@
 //!   preflight, which this server never approves.
 //!
 //! Captured downloads are not started silently: by default the app asks the user first.
+//! Each request is traced to the program that sent it, so only the browsers the user
+//! picked are taken over.
 
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -22,8 +26,26 @@ const MAX_HEAD: usize = 16 * 1024;
 const MAX_BODY: usize = 256 * 1024;
 const EXTENSION_ORIGINS: [&str; 3] = ["chrome-extension://", "moz-extension://", "safari-web-extension://"];
 
-/// Takes a captured download; returns false to leave it to the browser.
-pub(crate) type CaptureSink = Arc<dyn Fn(AddRequest) -> bool + Send + Sync>;
+/// What the endpoint asks of the engine.
+pub(crate) trait Host: Send + Sync {
+    /// The program sending a request made contact (on every request).
+    fn seen(&self, program: Option<&Path>);
+    /// Takes a captured download; returns false to leave it to the browser.
+    fn capture(&self, request: AddRequest, program: Option<&Path>) -> bool;
+    /// What the extension in `program` should take over.
+    fn config(&self, program: Option<&Path>) -> ClientConfig;
+}
+
+/// Tells an extension which downloads to hand over, so it never cancels one in the
+/// browser that Tachyon would refuse.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ClientConfig {
+    /// Downloads from this browser are taken over at all.
+    pub capture: bool,
+    pub extensions: Vec<String>,
+    pub excluded_sites: Vec<String>,
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,7 +63,7 @@ struct CaptureBody {
     description: Option<String>,
 }
 
-pub(crate) async fn serve(port: u16, cancel: CancellationToken, sink: CaptureSink) {
+pub(crate) async fn serve(port: u16, cancel: CancellationToken, host: Arc<dyn Host>) {
     let listener = match TcpListener::bind(("127.0.0.1", port)).await {
         Ok(listener) => listener,
         Err(e) => {
@@ -54,13 +76,14 @@ pub(crate) async fn serve(port: u16, cancel: CancellationToken, sink: CaptureSin
         let stream = tokio::select! {
             _ = cancel.cancelled() => return,
             accepted = listener.accept() => match accepted {
-                Ok((stream, _)) => stream,
+                Ok(accepted) => accepted,
                 Err(_) => continue,
             },
         };
-        let sink = sink.clone();
+        let host = host.clone();
         tokio::spawn(async move {
-            let _ = tokio::time::timeout(Duration::from_secs(10), handle(stream, port, sink)).await;
+            let (stream, peer) = stream;
+            let _ = tokio::time::timeout(Duration::from_secs(10), handle(stream, peer, port, host)).await;
         });
     }
 }
@@ -151,7 +174,7 @@ fn is_allowed(request: &Request, port: u16) -> bool {
     host_ok && origin_ok && request.header("x-tachyon-client").is_some()
 }
 
-async fn handle(mut stream: TcpStream, port: u16, sink: CaptureSink) {
+async fn handle(mut stream: TcpStream, peer: SocketAddr, port: u16, host: Arc<dyn Host>) {
     let Some(request) = read_request(&mut stream).await else {
         respond(&mut stream, "400 Bad Request", r#"{"error":"bad request"}"#).await;
         return;
@@ -160,7 +183,17 @@ async fn handle(mut stream: TcpStream, port: u16, sink: CaptureSink) {
         respond(&mut stream, "403 Forbidden", r#"{"error":"forbidden"}"#).await;
         return;
     }
+    let program: Option<PathBuf> = tokio::task::spawn_blocking(move || crate::sender::program_of(peer, port))
+        .await
+        .ok()
+        .flatten();
+    let program = program.as_deref();
+    host.seen(program);
     match (request.method.as_str(), request.path.as_str()) {
+        ("GET", "/v1/config") => {
+            let body = serde_json::to_string(&host.config(program)).unwrap_or_default();
+            respond(&mut stream, "200 OK", &body).await;
+        }
         ("GET", "/v1/ping") => {
             let body = format!(r#"{{"app":"Tachyon","version":"{}"}}"#, env!("CARGO_PKG_VERSION"));
             respond(&mut stream, "200 OK", &body).await;
@@ -177,7 +210,7 @@ async fn handle(mut stream: TcpStream, port: u16, sink: CaptureSink) {
                 respond(&mut stream, "422 Unprocessable Entity", r#"{"error":"unsupported url"}"#).await;
                 return;
             }
-            let accepted = sink(AddRequest {
+            let accepted = host.capture(AddRequest {
                 request: RequestSpec {
                     url: capture.url,
                     referer: capture.referrer.filter(|r| !r.is_empty()),
@@ -189,12 +222,12 @@ async fn handle(mut stream: TcpStream, port: u16, sink: CaptureSink) {
                 description: capture.description.unwrap_or_default(),
                 start: true,
                 ..Default::default()
-            });
+            }, program);
             if accepted {
                 respond(&mut stream, "200 OK", r#"{"ok":true}"#).await;
             } else {
                 // The extension then lets the browser download it.
-                respond(&mut stream, "409 Conflict", r#"{"error":"excluded site"}"#).await;
+                respond(&mut stream, "409 Conflict", r#"{"error":"not taken over"}"#).await;
             }
         }
         _ => respond(&mut stream, "404 Not Found", r#"{"error":"not found"}"#).await,

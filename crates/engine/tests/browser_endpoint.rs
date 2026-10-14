@@ -75,3 +75,40 @@ fn browser_endpoint_accepts_extensions_and_rejects_pages() {
     // Nothing is downloaded until the user confirms.
     assert!(engine.snapshot().is_empty());
 }
+
+#[cfg(windows)]
+#[test]
+fn browser_list_decides_what_is_taken_over() {
+    let port = free_port();
+    let dir = tempfile::tempdir().unwrap();
+    let engine = open_engine(dir.path(), |s| {
+        s.browser_integration = true;
+        s.integration_port = port;
+    });
+    for _ in 0..50 {
+        if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let host = format!("127.0.0.1:{port}");
+    let config = || send(port, &format!("GET /v1/config HTTP/1.1\r\nHost: {host}\r\nX-Tachyon-Client: t\r\n\r\n"));
+    let body = r#"{"url":"https://example.com/file.zip"}"#;
+
+    // This test program plays the browser: its first contact adds it to the list.
+    let first = config();
+    assert!(first.contains(r#""capture":true"#), "{first}");
+    assert!(first.contains(r#""zip""#), "{first}");
+    let me = std::env::current_exe().unwrap().file_name().unwrap().to_string_lossy().to_ascii_lowercase();
+    let mut settings = engine.settings();
+    let rule = settings.browsers.iter_mut().find(|b| b.exe.eq_ignore_ascii_case(&me)).expect("added");
+    assert!(rule.enabled);
+    assert!(engine.connected_browsers().contains(&me));
+
+    // Unticked, its downloads stay in the browser.
+    rule.enabled = false;
+    engine.update_settings(settings).unwrap();
+    assert!(config().contains(r#""capture":false"#));
+    assert!(post(port, Some("chrome-extension://abc"), true, &host, body).starts_with("HTTP/1.1 409"));
+    assert!(engine.drain_events().is_empty());
+}

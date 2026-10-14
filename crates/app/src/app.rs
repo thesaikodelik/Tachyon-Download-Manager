@@ -387,11 +387,12 @@ pub fn open_scheduler(cx: &mut App) {
 
 /// The bundled browser extension, for the Options window's "Show extension" button.
 pub fn extension_dir() -> Option<PathBuf> {
-    let bundled = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|p| p.join("../Resources/extension")));
+    let exe_dir = std::env::current_exe().ok().and_then(|exe| exe.parent().map(PathBuf::from));
+    // Inside the macOS app bundle, or next to Tachyon.exe on Windows.
+    let bundled = exe_dir.as_ref().map(|p| p.join("../Resources/extension"));
+    let beside = exe_dir.map(|p| p.join("extension"));
     let source = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../extension"));
-    [bundled, Some(source)]
+    [bundled, beside, Some(source)]
         .into_iter()
         .flatten()
         .find(|p| p.join("manifest.json").exists())

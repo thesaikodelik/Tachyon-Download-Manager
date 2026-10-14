@@ -3,21 +3,41 @@
   "name": "Tachyon Download Manager Integration",
   "short_name": "Tachyon",
   "version": "0.1.0",
-  "description": "Send links and browser downloads to the Tachyon download accelerator for macOS.",
-  "permissions": ["contextMenus", "downloads", "cookies", "storage"],
-  "host_permissions": ["<all_urls>"],
+  "description": "Send links and browser downloads to the Tachyon download manager.",
+  "permissions": [
+    "contextMenus",
+    "downloads",
+    "cookies",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "background.js",
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "action": {
     "default_title": "Tachyon",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/bolt-16.png",
+      "32": "icons/bolt-32.png"
+    }
   },
   "browser_specific_settings": {
     "gecko": {
       "id": "tachyon@localhost",
       "strict_min_version": "121.0"
     }
+  },
+  "icons": {
+    "16": "icons/bolt-16.png",
+    "32": "icons/bolt-32.png",
+    "48": "icons/bolt-48.png",
+    "128": "icons/bolt-128.png"
   }
 }

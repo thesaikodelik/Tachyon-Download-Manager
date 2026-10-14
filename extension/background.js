@@ -1,18 +1,18 @@
 // Hands links and browser downloads over to the Tachyon app via its local endpoint
 // (127.0.0.1 only). The app shows its "Download File Info" dialog before anything
 // is downloaded, unless the user opted out in Tachyon's Options.
+//
+// Which file types and sites are taken over, and whether this browser is taken over
+// at all, is set in Tachyon (Options > Browser) and fetched from it.
 
 const DEFAULTS = {
   port: 7311,
   takeOver: true,
-  // Downloads with these extensions are taken over from the browser.
-  extensions:
-    "zip rar 7z gz tgz bz2 xz tar dmg pkg iso img exe msi apk deb rpm " +
-    "mp4 m4v mkv mov avi wmv webm flv mp3 m4a flac wav aac ogg pdf epub",
 };
 
 const MENU_ID = "tachyon-download";
-// URLs we handed back to the browser after Tachyon was unreachable.
+const CHECK_IN = "tachyon-check-in";
+// URLs we handed back to the browser after Tachyon refused or was unreachable.
 const passThrough = new Set();
 
 async function settings() {
@@ -23,16 +23,18 @@ function endpoint(port, path) {
   return `http://127.0.0.1:${port}${path}`;
 }
 
-async function ping() {
+/** Tachyon's capture settings for this browser, or null when it isn't running. */
+async function fetchConfig() {
   const { port } = await settings();
   try {
-    const response = await fetch(endpoint(port, "/v1/ping"), {
+    const response = await fetch(endpoint(port, "/v1/config"), {
       headers: { "X-Tachyon-Client": "extension" },
       signal: AbortSignal.timeout(1500),
     });
-    return response.ok;
+    if (!response.ok) return null;
+    return await response.json();
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -69,12 +71,43 @@ async function sendToTachyon({ url, referrer, filename }) {
   }
 }
 
+/** Matches Tachyon's site patterns: `*.example.com` means its subdomains. */
+function siteMatches(pattern, host) {
+  pattern = pattern.trim().toLowerCase();
+  if (pattern.startsWith("*.")) {
+    const base = pattern.slice(2);
+    return host === base || host.endsWith("." + base);
+  }
+  return host === pattern;
+}
+
+function isExcluded(url, sites) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return (sites || []).some((p) => siteMatches(p, host));
+  } catch {
+    return false;
+  }
+}
+
+// Tells Tachyon this browser's extension is installed, so Options can show it as
+// connected; Tachyon adds a browser it hasn't met to its list.
+function checkIn() {
+  fetchConfig();
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: MENU_ID,
     title: "Download with Tachyon",
     contexts: ["link", "image", "video", "audio"],
   });
+  chrome.alarms.create(CHECK_IN, { periodInMinutes: 5 });
+  checkIn();
+});
+chrome.runtime.onStartup.addListener(checkIn);
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === CHECK_IN) checkIn();
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -107,11 +140,12 @@ chrome.downloads.onCreated.addListener(async (item) => {
   const url = item.finalUrl || item.url;
   if (!/^https?:/i.test(url) || item.byExtensionId === chrome.runtime.id) return;
   if (passThrough.delete(url)) return;
-  const { takeOver, extensions } = await settings();
+  const { takeOver } = await settings();
   if (!takeOver) return;
-  const wanted = new Set(extensions.toLowerCase().split(/[\s,]+/).filter(Boolean));
-  if (!wanted.has(extensionOf(item))) return;
-  if (!(await ping())) return;
+  const config = await fetchConfig();
+  if (!config?.capture) return;
+  if (!new Set(config.extensions).has(extensionOf(item))) return;
+  if (isExcluded(url, config.excludedSites)) return;
 
   await chrome.downloads.cancel(item.id).catch(() => {});
   await chrome.downloads.erase({ id: item.id }).catch(() => {});
@@ -126,7 +160,7 @@ chrome.downloads.onCreated.addListener(async (item) => {
 // Popup API.
 chrome.runtime.onMessage.addListener((message, _sender, reply) => {
   if (message?.type === "status") {
-    ping().then((connected) => reply({ connected }));
+    fetchConfig().then((config) => reply({ connected: Boolean(config), capture: Boolean(config?.capture) }));
     return true;
   }
   return false;

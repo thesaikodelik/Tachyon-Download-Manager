@@ -8,7 +8,7 @@ use gpui::{
     prelude::*, px,
 };
 use tachyon_engine::{
-    CategoryDef, DuplicateAction, Engine, ProxyMode, ServerLimit, Settings, SiteLogin, ThemeMode, WindowStyle,
+    BrowserRule, CategoryDef, DEFAULT_CAPTURE_EXTENSIONS, DuplicateAction, Engine, ProxyMode, ServerLimit, Settings, SiteLogin, ThemeMode, WindowStyle,
     default_categories,
 };
 
@@ -31,6 +31,25 @@ const SECTIONS: [(&str, Icon); 8] = [
     ("File Types", Icon::Document),
     ("Browser", Icon::External),
 ];
+/// Adds the browsers installed on this computer that the list doesn't have yet, and
+/// fills in where listed ones are.
+fn merge_installed_browsers(list: &mut Vec<BrowserRule>) {
+    for (name, path) in crate::platform::installed_browsers() {
+        let Some(exe) = path.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()) else { continue };
+        match list.iter_mut().find(|b| b.exe.eq_ignore_ascii_case(&exe)) {
+            Some(known) => {
+                // Names the engine guessed from the file name give way to the real ones.
+                if known.path.is_none() || known.name.eq_ignore_ascii_case(exe.trim_end_matches(".exe")) {
+                    known.name = name;
+                }
+                known.path.get_or_insert(path);
+            }
+            None => list.push(BrowserRule { name, exe, path: Some(path), enabled: true }),
+        }
+    }
+    list.sort_by_key(|b| b.name.to_lowercase());
+}
+
 const CONNECTION_PRESETS: [u32; 7] = [1, 2, 4, 8, 16, 24, 32];
 const NAV_WIDTH: f32 = 176.;
 
@@ -65,6 +84,9 @@ pub struct OptionsWindow {
     port: Entity<TextInput>,
     virus_scanner: Entity<TextInput>,
     excluded_sites: Entity<TextInput>,
+    capture_types: Entity<TextInput>,
+    /// The highlighted row in the browser list, for Remove.
+    selected_browser: Option<usize>,
     extensions: Vec<(String, Entity<TextInput>)>,
     /// Folder override per category; empty uses the default.
     category_folders: Vec<(String, Entity<TextInput>)>,
@@ -92,7 +114,8 @@ fn secret(cx: &mut Context<OptionsWindow>, placeholder: &str, text: String) -> E
 impl OptionsWindow {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let engine = app::engine(cx);
-        let draft = engine.settings();
+        let mut draft = engine.settings();
+        merge_installed_browsers(&mut draft.browsers);
         cx.observe_window_appearance(window, |_, _, cx| cx.notify()).detach();
         let extensions = draft
             .categories
@@ -142,6 +165,8 @@ impl OptionsWindow {
             port: number(cx, u64::from(draft.integration_port)),
             virus_scanner: input(cx, "Microsoft Defender", draft.virus_scanner.clone()),
             excluded_sites: input(cx, "*.example.com other.site", draft.excluded_sites.join(" ")),
+            capture_types: input(cx, "zip exe mp4 …", draft.capture_extensions.join(" ")),
+            selected_browser: None,
             extensions,
             category_folders,
             logins,
@@ -203,6 +228,14 @@ impl OptionsWindow {
             .split([' ', ',', ';'])
             .map(|site| site.trim().to_string())
             .filter(|site| !site.is_empty())
+            .collect();
+        s.capture_extensions = self
+            .capture_types
+            .read(cx)
+            .text()
+            .split([' ', ',', ';'])
+            .map(|e| e.trim().trim_start_matches('.').to_ascii_lowercase())
+            .filter(|e| !e.is_empty())
             .collect();
         s.categories = self
             .extensions
@@ -794,6 +827,131 @@ impl OptionsWindow {
             .into_any_element()
     }
 
+    /// Lets the user pick any program and adds it to the browser list.
+    fn add_browser(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let paths = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Add".into()),
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            if let Ok(Ok(Some(paths))) = paths.await
+                && let Some(path) = paths.into_iter().next()
+                && let Some(exe) = path.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase())
+            {
+                this.update(cx, |this, cx| {
+                    let list = &mut this.draft.browsers;
+                    match list.iter().position(|b| b.exe.eq_ignore_ascii_case(&exe)) {
+                        Some(ix) => list[ix].enabled = true,
+                        None => {
+                            let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or(exe.clone());
+                            list.push(BrowserRule { name, exe, path: Some(path), enabled: true });
+                            list.sort_by_key(|b| b.name.to_lowercase());
+                        }
+                    }
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// IDM's "Capture downloads from the following browsers", with whether each
+    /// browser's Tachyon extension is in touch.
+    fn render_browser_list(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let connected = self.engine.connected_browsers();
+        let theme = *theme;
+        let rows = self.draft.browsers.iter().enumerate().map(|(ix, browser)| {
+            let selected = self.selected_browser == Some(ix);
+            let online = connected.iter().any(|exe| exe.eq_ignore_ascii_case(&browser.exe));
+            let program_icon = browser
+                .path
+                .as_deref()
+                .and_then(|p| crate::file_icons::file_icon(p, true))
+                .map(|image| gpui::img(image).size(px(16.)).flex_none().into_any_element())
+                .unwrap_or_else(|| icon(Icon::Globe, px(16.), theme.icon).into_any_element());
+            div()
+                .id(("browser-row", ix))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .h(px(30.))
+                .px(px(8.))
+                .rounded(px(theme.radius))
+                .when(selected, |this| this.bg(theme.accent_soft))
+                .when(!selected, |this| this.hover(move |s| s.bg(theme.hover)))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.selected_browser = Some(ix);
+                    cx.notify();
+                }))
+                .child(Checkbox::new(("browser", ix), "", browser.enabled).on_toggle(cx.listener(
+                    move |this, v: &bool, _, cx| {
+                        if let Some(b) = this.draft.browsers.get_mut(ix) {
+                            b.enabled = *v;
+                        }
+                        cx.notify();
+                    },
+                )))
+                .child(program_icon)
+                .child(div().flex_1().min_w_0().child(truncated(browser.name.clone())))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .text_size(px(12.))
+                        .text_color(if online { theme.text } else { theme.muted })
+                        .child(div().size(px(7.)).rounded_full().bg(if online { theme.success } else { theme.border_strong }))
+                        .child(if online { "Extension connected" } else { "No extension yet" }),
+                )
+        });
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(
+                div()
+                    .id("browser-list")
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .p(px(4.))
+                    .max_h(px(200.))
+                    .overflow_y_scroll()
+                    .rounded(px(theme.radius))
+                    .bg(theme.input)
+                    .border_1()
+                    .border_color(theme.border)
+                    .children(rows)
+                    .when(self.draft.browsers.is_empty(), |this| {
+                        this.child(div().p(px(8.)).text_color(theme.muted).child("No browsers found. Use Add… to pick one."))
+                    }),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.))
+                    .child(Button::new("add-browser", "Add…").on_click(cx.listener(|this, _, window, cx| {
+                        this.add_browser(window, cx)
+                    })))
+                    .child(
+                        Button::new("remove-browser", "Remove")
+                            .disabled(self.selected_browser.is_none())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                if let Some(ix) = this.selected_browser.take()
+                                    && ix < this.draft.browsers.len()
+                                {
+                                    this.draft.browsers.remove(ix);
+                                }
+                                cx.notify();
+                            })),
+                    ),
+            )
+    }
+
     fn render_browser(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let d = &self.draft;
         let extension = app::extension_dir();
@@ -801,6 +959,22 @@ impl OptionsWindow {
             .flex()
             .flex_col()
             .gap(px(10.))
+            .child(section_title("Capture downloads from these browsers", theme))
+            .child(self.render_browser_list(theme, cx))
+            .child(Self::hint(
+                "Installed browsers are listed automatically, and a browser whose Tachyon extension connects is added \
+                 by itself. Add… takes any other program.",
+                theme,
+            ))
+            .child(div().h(px(6.)))
+            .child(section_title("Take over these file types", theme))
+            .child(div().flex().child(div().flex_1().min_w_0().child(self.capture_types.clone())))
+            .child(div().flex().child(Button::new("reset-capture-types", "Restore Defaults").on_click(cx.listener(
+                |this, _, _, cx| {
+                    this.capture_types.update(cx, |i, cx| i.set_text(DEFAULT_CAPTURE_EXTENSIONS.split_whitespace().collect::<Vec<_>>().join(" "), cx));
+                },
+            ))))
+            .child(div().h(px(6.)))
             .child(section_title("Browser integration", theme))
             .child(Checkbox::new("integration", "Accept downloads from the Tachyon browser extension", d.browser_integration).on_toggle(
                 cx.listener(|this, v: &bool, _, cx| {
@@ -829,10 +1003,18 @@ impl OptionsWindow {
                 theme,
             ))
             .child(div().h(px(6.)))
-            .child(section_title("Install the extension (Chrome, Edge, Brave, Arc)", theme))
-            .child(Self::hint("1. Open chrome://extensions and turn on Developer mode.", theme))
-            .child(Self::hint("2. Click “Load unpacked” and choose the extension folder.", theme))
-            .child(Self::hint("3. Right-click any link and choose “Download with Tachyon”, or let it take over downloads.", theme))
+            .child(section_title("Install the extension", theme))
+            .child(Self::hint(
+                "Chrome, Edge, Brave, Opera, Vivaldi and other Chromium browsers: open the extensions page \
+                 (chrome://extensions), turn on Developer mode, click “Load unpacked” and choose the extension folder.",
+                theme,
+            ))
+            .child(Self::hint(
+                "Firefox: open about:debugging, choose This Firefox › Load Temporary Add-on and pick manifest.json \
+                 in the extension folder. It stays until Firefox restarts.",
+                theme,
+            ))
+            .child(Self::hint("Then right-click any link and choose “Download with Tachyon”, or let it take over downloads.", theme))
             .child(div().pt(px(4.)).child(match extension {
                 Some(path) => Button::new("show-ext", "Show Extension Folder")
                     .icon(Icon::Folder)
