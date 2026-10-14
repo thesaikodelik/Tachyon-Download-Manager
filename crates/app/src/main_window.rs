@@ -986,6 +986,17 @@ impl Render for MainWindow {
             .into_any_element()
         };
 
+        // The title bar stays outside the focusable area: taking focus on a click marks
+        // the click as handled, and Windows would then never get to move the window.
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .bg(theme.window)
+            .text_color(theme.text)
+            .font_family(".SystemUIFont")
+            .child(title_bar("Tachyon Download Manager", true, window, &theme))
+            .child(
         div()
             .key_context(CONTEXT)
             .track_focus(&self.focus_handle)
@@ -995,13 +1006,11 @@ impl Render for MainWindow {
             .on_action(cx.listener(|this, _: &StopSelected, _, cx| this.stop(cx)))
             .on_action(cx.listener(|this, _: &DeleteSelected, window, cx| this.delete(window, cx)))
             .on_action(cx.listener(|this, _: &RevealSelected, _, cx| this.reveal(cx)))
-            .size_full()
+            .flex_1()
+            .min_h_0()
+            .w_full()
             .flex()
             .flex_col()
-            .bg(theme.window)
-            .text_color(theme.text)
-            .font_family(".SystemUIFont")
-            .child(title_bar("Tachyon Download Manager", true, window, &theme))
             .child(self.render_toolbar(&theme, cx))
             .child(
                 div()
@@ -1045,7 +1054,8 @@ impl Render for MainWindow {
             .when(!theme.fluent, |this| this.child(self.render_status_bar(&theme)))
             .when_some(self.context_menu.as_ref(), |this, menu| {
                 this.child(self.render_context_menu(menu, &theme, cx))
-            })
+            }),
+            )
     }
 }
 
