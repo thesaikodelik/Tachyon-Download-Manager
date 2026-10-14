@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::{
-    AnyElement, App, AppContext, ClipboardItem, Context, FocusHandle, Focusable, FontWeight,
+    AnyElement, App, AppContext, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight,
     KeyBinding, MouseButton, MouseDownEvent, Pixels, Point, PromptLevel, SharedString, Task,
     UniformListScrollHandle, Window, WindowBounds, actions, anchored, deferred, div, prelude::*, px,
     size, uniform_list,
@@ -13,6 +13,7 @@ use gpui::{
 use tachyon_engine::{DownloadId, DownloadSnapshot, DownloadStatus, Engine, GENERAL};
 
 use crate::add_dialog::AddPrefill;
+use crate::brand::Brand;
 use crate::app;
 use crate::assets::Icon;
 use crate::file_icons::file_icon_element;
@@ -124,6 +125,7 @@ pub struct MainWindow {
     categories_open: bool,
     queue_running: bool,
     total_speed: u64,
+    pub(crate) brand: Entity<Brand>,
     _poll: Task<()>,
 }
 
@@ -151,6 +153,7 @@ impl MainWindow {
             anchor: None,
             scroll: UniformListScrollHandle::new(),
             context_menu: None,
+            brand: cx.new(|_| Brand::default()),
             categories_open: true,
             queue_running: false,
             total_speed: 0,
@@ -461,21 +464,7 @@ impl MainWindow {
                     })),
             )
             .child(div().flex_1())
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .pr(px(6.))
-                    .text_color(theme.icon)
-                    .child(icon(Icon::Bolt, px(18.), theme.icon))
-                    .child(
-                        div()
-                            .text_size(px(15.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("Tachyon"),
-                    ),
-            )
+            .child(self.brand.clone())
     }
 
     #[allow(clippy::too_many_arguments)]

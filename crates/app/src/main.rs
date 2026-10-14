@@ -8,6 +8,7 @@ mod add_dialog;
 mod antivirus;
 mod app;
 mod assets;
+mod brand;
 mod complete_dialog;
 mod file_icons;
 mod format;
