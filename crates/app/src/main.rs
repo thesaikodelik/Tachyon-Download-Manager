@@ -8,6 +8,7 @@ mod add_dialog;
 mod app;
 mod assets;
 mod complete_dialog;
+mod file_icons;
 mod format;
 mod main_window;
 mod options_window;

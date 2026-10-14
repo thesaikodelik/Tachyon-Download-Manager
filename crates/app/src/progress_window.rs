@@ -13,14 +13,15 @@ use tachyon_engine::{
     PostAction,
 };
 
-use crate::app::{self, PROGRESS_SIZE, PROGRESS_SIZE_EXPANDED};
+use crate::app;
 use crate::assets::Icon;
+use crate::file_icons::file_icon_element;
 use crate::format;
 use crate::theme::Theme;
 use crate::widgets::text_input::{InputEvent, TextInput};
 use crate::widgets::{
-    Button, Checkbox, field_row, icon, progress_bar, radio_group, section_title, segment_bar,
-    separator, tabs, truncated,
+    Button, Checkbox, card, field_row, fit_window_height, icon, progress_bar, radio_group, section_title,
+    segment_bar, separator, tabs, truncated,
 };
 
 pub struct ProgressWindow {
@@ -97,8 +98,11 @@ impl ProgressWindow {
 
     pub(crate) fn toggle_details(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.expanded = !self.expanded;
-        let (w, h) = if self.expanded { PROGRESS_SIZE_EXPANDED } else { PROGRESS_SIZE };
-        window.resize(size(px(w), px(h)));
+        // The Windows 11 layout sizes the window to its content (fit_window_height).
+        if !Theme::of(window).fluent {
+            let (w, h) = app::progress_size(self.expanded);
+            window.resize(size(px(w), px(h)));
+        }
         self.details = self.engine.details(self.id);
         cx.notify();
     }
@@ -257,9 +261,10 @@ impl ProgressWindow {
                 div()
                     .flex()
                     .flex_col()
-                    .rounded(px(6.))
+                    .rounded(px(theme.radius_large.min(6.)))
                     .border_1()
                     .border_color(theme.border)
+                    .bg(if theme.fluent { theme.layer } else { gpui::transparent_black() })
                     .overflow_hidden()
                     .child(
                         div()
@@ -267,7 +272,8 @@ impl ProgressWindow {
                             .h(px(24.))
                             .items_center()
                             .px(px(10.))
-                            .bg(theme.chrome)
+                            .when(!theme.fluent, |this| this.bg(theme.chrome))
+                            .when(theme.fluent, |this| this.border_b_1().border_color(theme.border))
                             .text_size(px(11.))
                             .text_color(theme.muted)
                             .child(div().w(px(40.)).child("N."))
@@ -277,7 +283,7 @@ impl ProgressWindow {
                     .child(
                         div()
                             .id("connections")
-                            .h(px(150.))
+                            .h(px(if theme.fluent { 132. } else { 150. }))
                             .overflow_y_scroll()
                             .when(connections.is_empty(), |this| {
                                 this.child(
@@ -314,12 +320,192 @@ impl ProgressWindow {
     }
 }
 
+impl ProgressWindow {
+    /// IDM's status values, each on its own row of a card so they read as a table.
+    fn render_status_fluent(&self, d: &DownloadSnapshot, theme: &Theme) -> AnyElement {
+        let downloaded = match d.progress() {
+            Some(p) => format!("{} ({:.2}%)", format::bytes(d.downloaded), p * 100.0),
+            None => format::bytes(d.downloaded),
+        };
+        let (resume, resume_color) = match d.resumable {
+            Some(true) => ("Yes", theme.success),
+            Some(false) => ("No", theme.warning),
+            None => ("Unknown", theme.muted),
+        };
+        let status_color = match d.status {
+            DownloadStatus::Failed => theme.danger,
+            DownloadStatus::Completed => theme.success,
+            _ => theme.text,
+        };
+        let downloading = d.status == DownloadStatus::Downloading;
+        let rows: Vec<(&str, String, gpui::Hsla)> = vec![
+            ("Status", format::status_line(d), status_color),
+            ("File size", d.size.map(format::bytes).unwrap_or_else(|| "Unknown".into()), theme.text),
+            ("Downloaded", downloaded, theme.text),
+            ("Transfer rate", if downloading && d.speed > 0 { format::speed(d.speed) } else { "—".into() }, theme.text),
+            (
+                "Time left",
+                d.eta_secs.filter(|_| downloading).map(format::duration).unwrap_or_else(|| "—".into()),
+                theme.text,
+            ),
+            ("Resume capability", resume.into(), resume_color),
+        ];
+        card(theme)
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .children(rows.into_iter().enumerate().map(|(ix, (label, value, color))| {
+                div()
+                    .flex()
+                    .items_center()
+                    .h(px(26.))
+                    .px(px(12.))
+                    .when(ix > 0, |this| this.border_t_1().border_color(theme.border))
+                    .child(div().w(px(130.)).flex_none().text_color(theme.muted).child(label))
+                    .child(div().flex_1().min_w_0().text_color(color).child(truncated(value)))
+            }))
+            .into_any_element()
+    }
+
+    fn render_fluent(&mut self, d: DownloadSnapshot, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+        let active = d.status.is_active();
+        let tab_body = match self.tab {
+            0 => self.render_status_fluent(&d, theme),
+            1 => self.render_limiter_tab(theme, cx),
+            _ => self.render_completion_tab(&d, theme, cx),
+        };
+        let bar_color = match d.status {
+            DownloadStatus::Failed => theme.danger,
+            DownloadStatus::Completed => theme.success,
+            DownloadStatus::Stopped => theme.faint,
+            _ => theme.accent,
+        };
+        div()
+            .size_full()
+            .bg(theme.window)
+            .text_color(theme.text)
+            .text_size(px(13.))
+            .child(fit_window_height(
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.))
+                    .px(px(16.))
+                    .pt(px(12.))
+                    .pb(px(12.))
+                    .overflow_hidden()
+                    .bg(theme.bg)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(10.))
+                            .child(file_icon_element(&d.path(), &d.category, px(28.), theme))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(div().w_full().font_weight(FontWeight::SEMIBOLD).child(truncated(d.file_name.clone())))
+                                    .child(div().w_full().text_size(px(12.)).text_color(theme.muted).child(truncated(d.url.clone()))),
+                            ),
+                    )
+                    .child(tabs(
+                        "progress-tabs",
+                        &["Download status", "Speed limiter", "Options on completion"],
+                        self.tab,
+                        theme,
+                        cx.listener(|this, ix: &usize, _, cx| {
+                            this.tab = *ix;
+                            cx.notify();
+                        }),
+                    ))
+                    .child(div().h(px(158.)).flex_none().child(tab_body))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(10.))
+                            .child(div().flex_1().child(progress_bar(d.progress(), px(6.), bar_color, theme)))
+                            .child(
+                                div()
+                                    .w(px(48.))
+                                    .text_right()
+                                    .text_size(px(12.))
+                                    .text_color(theme.muted)
+                                    .child(d.progress().map(|p| format!("{:.1}%", p * 100.0)).unwrap_or_default()),
+                            ),
+                    )
+                    .when(self.expanded, |this| this.child(self.render_details(&d, theme))),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(8.))
+                    .px(px(16.))
+                    .py(px(10.))
+                    .bg(theme.chrome)
+                    .border_t_1()
+                    .border_color(theme.border)
+                    .child(
+                        Button::new("details", if self.expanded { "Hide details" } else { "Show details" })
+                            .ghost()
+                            .icon(if self.expanded { Icon::ChevronUp } else { Icon::ChevronDown })
+                            .on_click(cx.listener(|this, _, window, cx| this.toggle_details(window, cx))),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(8.))
+                            .w(px(232.))
+                            .child(if active {
+                                Button::new("pause", "Pause")
+                                    .primary()
+                                    .fill()
+                                    .on_click(cx.listener(|this, _, _, _| this.engine.pause(this.id)))
+                                    .into_any_element()
+                            } else {
+                                Button::new("resume", "Resume")
+                                    .primary()
+                                    .fill()
+                                    .disabled(d.status == DownloadStatus::Completed)
+                                    .on_click(cx.listener(|this, _, _, _| {
+                                        if let Err(e) = this.engine.start(this.id) {
+                                            log::warn!("cannot resume: {e}");
+                                        }
+                                    }))
+                                    .into_any_element()
+                            })
+                            .child(Button::new("cancel", "Cancel").fill().on_click(cx.listener(
+                                |this, _, window, _| {
+                                    this.engine.pause(this.id);
+                                    window.remove_window();
+                                },
+                            ))),
+                    ),
+            ),
+            ))
+            .into_any_element()
+    }
+}
+
 impl Render for ProgressWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(window);
         let Some(d) = self.snapshot.clone() else {
             return div().size_full().bg(theme.bg).into_any_element();
         };
+        if theme.fluent {
+            return self.render_fluent(d, &theme, cx);
+        }
         let active = d.status.is_active();
         let tab_body = match self.tab {
             0 => self.render_status_tab(&d, &theme),

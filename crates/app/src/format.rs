@@ -32,6 +32,19 @@ pub fn bytes(n: u64) -> String {
     }
 }
 
+/// `2261040126` → `2,261,040,126`.
+pub fn thousands(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
+
 pub fn speed(bytes_per_sec: u64) -> String {
     if bytes_per_sec == 0 {
         return String::new();

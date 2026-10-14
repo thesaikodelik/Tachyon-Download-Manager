@@ -18,7 +18,7 @@ log.workspace = true
 env_logger.workspace = true
 url.workspace = true
 unicode-segmentation = "1.12"
-png = { version = "0.17", optional = true }
+png = "0.17"
 raw-window-handle = "0.6"
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -36,6 +36,21 @@ windows-sys = { version = "0.59", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
+# The COM-based shell APIs (drag and drop) are far simpler through `windows`, which
+# GPUI already depends on.
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_UI_Controls",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [features]
 # Saves window PNGs on demand for visual checks; see src/snapshot.rs.
-dev-snapshots = ["dep:objc", "dep:png"]
+dev-snapshots = ["dep:objc"]

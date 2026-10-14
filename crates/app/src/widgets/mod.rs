@@ -449,6 +449,29 @@ pub fn field(label: impl Into<SharedString>, control: impl IntoElement, theme: &
         .child(control)
 }
 
+/// Lays `content` out at its natural height and sizes the window to match, so a
+/// dialog never clips its content or leaves a gap, whatever it shows (details
+/// expanded, a login form, a longer error…). The window keeps its width.
+pub fn fit_window_height(content: impl IntoElement) -> impl IntoElement {
+    div().relative().flex_none().w_full().child(content).child(
+        canvas(
+            |bounds: Bounds<Pixels>, window: &mut Window, _: &mut App| {
+                let wanted = bounds.size.height.round();
+                let current = window.viewport_size();
+                if (f32::from(wanted) - f32::from(current.height)).abs() > 0.5 {
+                    // Takes effect after this frame; the next layout then matches.
+                    window.resize(size(current.width, wanted));
+                }
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full(),
+    )
+}
+
 /// IDM-style row: a right-aligned caption to the left of its control, so a dialog
 /// stays compact while every value keeps its own box.
 pub fn field_row_inline(

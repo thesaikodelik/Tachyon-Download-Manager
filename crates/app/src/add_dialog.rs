@@ -12,11 +12,13 @@ use tachyon_engine::{
 
 use crate::app;
 use crate::assets::Icon;
+use crate::file_icons::file_icon_element;
 use crate::format::{self, display_path, expand_home};
 use crate::theme::Theme;
 use crate::widgets::text_input::{InputEvent, TextInput};
 use crate::widgets::{
-    Button, Checkbox, card, dropdown_trigger, field_row_inline, icon, menu_item, menu_panel, truncated,
+    Button, Checkbox, card, dropdown_trigger, field_row_inline, fit_window_height, icon, menu_item, menu_panel,
+    truncated,
 };
 
 /// Width of the captions to the left of the fields on the Windows 11 layout.
@@ -163,6 +165,10 @@ impl AddDialog {
 
     fn resize(&self, window: &mut Window) {
         let fluent = Theme::of(window).fluent;
+        if fluent {
+            // The Windows 11 layout sizes the window to its content (fit_window_height).
+            return;
+        }
         let height = match self.stage {
             Stage::EnterUrl | Stage::Probing if self.use_auth => if fluent { 208. } else { 330. },
             Stage::EnterUrl | Stage::Probing => if fluent { 136. } else { 230. },
@@ -576,7 +582,12 @@ impl AddDialog {
             .gap(px(5.))
             .px(px(8.))
             .py(px(10.))
-            .child(icon(Icon::for_category(&self.category), px(30.), theme.accent))
+            .child(file_icon_element(
+                &std::path::Path::new(&self.folder.read(cx).text()).join(&name),
+                &self.category,
+                px(32.),
+                theme,
+            ))
             .child(
                 div()
                     .px(px(8.))
@@ -717,15 +728,15 @@ impl AddDialog {
         let button_count = buttons.len() as f32;
         div()
             .size_full()
-            .flex()
-            .flex_col()
             .bg(theme.window)
             .text_color(theme.text)
             .text_size(px(13.))
-            .child(
+            .child(fit_window_height(
                 div()
-                    .flex_1()
-                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .child(
+                div()
                     .px(px(16.))
                     .py(px(14.))
                     .flex()
@@ -748,7 +759,8 @@ impl AddDialog {
                     .border_t_1()
                     .border_color(theme.border)
                     .child(div().flex().gap(px(8.)).w(px(124. * button_count)).children(buttons)),
-            )
+            ),
+            ))
             .into_any_element()
     }
 }

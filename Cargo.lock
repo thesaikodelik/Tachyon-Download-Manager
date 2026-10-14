@@ -5732,6 +5732,7 @@ dependencies = [
  "tachyon-engine",
  "unicode-segmentation",
  "url",
+ "windows 0.61.3",
  "windows-sys 0.59.0",
 ]
 

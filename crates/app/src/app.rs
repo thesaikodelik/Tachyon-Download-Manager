@@ -174,13 +174,27 @@ pub fn open_add_dialog(prefill: AddPrefill, cx: &mut App) {
 
 pub const PROGRESS_SIZE: (f32, f32) = (540., 360.);
 pub const PROGRESS_SIZE_EXPANDED: (f32, f32) = (540., 600.);
+pub const PROGRESS_SIZE_FLUENT: (f32, f32) = (520., 362.);
+pub const PROGRESS_SIZE_FLUENT_EXPANDED: (f32, f32) = (520., 584.);
+
+/// Size of the progress window for the current style.
+pub fn progress_size(expanded: bool) -> (f32, f32) {
+    let fluent = crate::theme::style() != tachyon_engine::WindowStyle::Classic;
+    match (fluent, expanded) {
+        (true, false) => PROGRESS_SIZE_FLUENT,
+        (true, true) => PROGRESS_SIZE_FLUENT_EXPANDED,
+        (false, false) => PROGRESS_SIZE,
+        (false, true) => PROGRESS_SIZE_EXPANDED,
+    }
+}
 
 pub fn open_progress_window(id: DownloadId, cx: &mut App) {
     let existing = cx.global::<AppState>().progress_windows.get(&id).copied();
     if activate(existing, cx) {
         return;
     }
-    let bounds = centered(size(px(PROGRESS_SIZE.0), px(PROGRESS_SIZE.1)), cx);
+    let (w, h) = progress_size(false);
+    let bounds = centered(size(px(w), px(h)), cx);
     let mut options = dialog_options("Download", bounds);
     options.focus = false;
     if let Ok(handle) = cx.open_window(options, |window, cx| cx.new(|cx| ProgressWindow::new(id, window, cx))) {
@@ -192,8 +206,12 @@ pub fn forget_progress_window(id: DownloadId, cx: &mut App) {
     cx.global_mut::<AppState>().progress_windows.remove(&id);
 }
 
+pub const COMPLETE_SIZE_FLUENT: (f32, f32) = (540., 240.);
+
 pub fn open_complete_dialog(id: DownloadId, cx: &mut App) {
-    let bounds = centered(size(px(520.), px(270.)), cx);
+    let fluent = crate::theme::style() != tachyon_engine::WindowStyle::Classic;
+    let (w, h) = if fluent { COMPLETE_SIZE_FLUENT } else { (520., 270.) };
+    let bounds = centered(size(px(w), px(h)), cx);
     cx.open_window(dialog_options("Download Complete", bounds), |window, cx| {
         cx.new(|cx| CompleteDialog::new(id, window, cx))
     })

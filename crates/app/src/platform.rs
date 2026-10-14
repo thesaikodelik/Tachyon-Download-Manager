@@ -35,6 +35,36 @@ pub fn sync_chrome(window: &mut Window, backdrop: Backdrop, dark: bool) {
     imp::sync_chrome(window, backdrop, dark)
 }
 
+/// What happened to a file dragged out of Tachyon.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DragOutcome {
+    /// The file now lives where it was dropped.
+    Moved,
+    /// The drop target made a copy (apps that only accept copies, like uploads).
+    Copied,
+    Cancelled,
+}
+
+/// The native handle of `window`, for calls that have to happen outside GPUI's
+/// event handling (see [`drag_file_out`]).
+pub fn native_handle(window: &Window) -> Option<usize> {
+    imp::native_handle(window)
+}
+
+/// Lets the user drag `path` to Explorer, the desktop or another app, as with IDM's
+/// "Download complete" dialog. Explorer moves the file (like Cut and Paste).
+///
+/// Blocks in a modal loop until the drop. Run it from a spawned task, never from an
+/// event handler: GPUI keeps handling messages for its windows during the loop.
+pub fn drag_file_out(handle: usize, path: &std::path::Path) -> Result<DragOutcome, String> {
+    imp::drag_file_out(handle, path)
+}
+
+/// Shows Windows' "Open with" chooser for `path`.
+pub fn open_with(path: &std::path::Path) {
+    imp::open_with(path)
+}
+
 /// Hides a window without destroying it, so the app keeps running in the tray.
 pub fn hide_window(window: &Window) {
     imp::hide_window(window)
@@ -59,7 +89,7 @@ mod imp {
     use windows_sys::Win32::UI::Controls::MARGINS;
     use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_SHOW, SetForegroundWindow, ShowWindow};
 
-    use super::Backdrop;
+    use super::{Backdrop, DragOutcome};
 
     pub(super) fn hwnd(window: &Window) -> Option<HWND> {
         match HasWindowHandle::window_handle(window).ok()?.as_raw() {
@@ -148,6 +178,82 @@ mod imp {
         }
     }
 
+    pub fn native_handle(window: &Window) -> Option<usize> {
+        hwnd(window).map(|h| h as usize)
+    }
+
+    pub fn drag_file_out(handle: usize, path: &std::path::Path) -> Result<DragOutcome, String> {
+        use std::mem::ManuallyDrop;
+
+        use windows::Win32::Foundation::HWND as WinHwnd;
+        use windows::Win32::System::Com::{
+            DVASPECT_CONTENT, FORMATETC, IDataObject, STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
+        };
+        use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
+        use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
+        use windows::Win32::System::Ole::{DROPEFFECT_COPY, DROPEFFECT_MOVE, IDropSource};
+        use windows::Win32::UI::Shell::{BHID_DataObject, IShellItem, SHCreateItemFromParsingName, SHDoDragDrop};
+        use windows::core::{HSTRING, w};
+
+        let err = |e: windows::core::Error| e.message();
+        // SAFETY: COM calls on the UI thread, where GPUI has initialised OLE; the
+        // HGLOBAL is handed to the data object, which frees it.
+        unsafe {
+            // The shell's own data object, so drops behave exactly as from Explorer.
+            let item: IShellItem = SHCreateItemFromParsingName(&HSTRING::from(path.as_os_str()), None).map_err(err)?;
+            let data: IDataObject = item.BindToHandler(None, &BHID_DataObject).map_err(err)?;
+
+            // Ask the target to move rather than copy, as Cut and Paste does.
+            let format = RegisterClipboardFormatW(w!("Preferred DropEffect")) as u16;
+            let global = GlobalAlloc(GMEM_MOVEABLE, std::mem::size_of::<u32>()).map_err(err)?;
+            *GlobalLock(global).cast::<u32>() = DROPEFFECT_MOVE.0;
+            let _ = GlobalUnlock(global);
+            let etc = FORMATETC {
+                cfFormat: format,
+                ptd: std::ptr::null_mut(),
+                dwAspect: DVASPECT_CONTENT.0,
+                lindex: -1,
+                tymed: TYMED_HGLOBAL.0 as u32,
+            };
+            let medium = STGMEDIUM {
+                tymed: TYMED_HGLOBAL.0 as u32,
+                u: STGMEDIUM_0 { hGlobal: global },
+                pUnkForRelease: ManuallyDrop::new(None),
+            };
+            data.SetData(&etc, &medium, true).map_err(err)?;
+
+            let effect = SHDoDragDrop(
+                Some(WinHwnd(handle as _)),
+                &data,
+                None::<&IDropSource>,
+                DROPEFFECT_MOVE | DROPEFFECT_COPY,
+            )
+            .map_err(err)?;
+
+            // Explorer usually moves the file itself ("optimised move"). Otherwise a
+            // MOVE result means the target made a copy and expects us to delete ours.
+            if !path.exists() {
+                return Ok(DragOutcome::Moved);
+            }
+            if effect.contains(DROPEFFECT_MOVE) {
+                std::fs::remove_file(path).map_err(|e| e.to_string())?;
+                return Ok(DragOutcome::Moved);
+            }
+            Ok(if effect.contains(DROPEFFECT_COPY) { DragOutcome::Copied } else { DragOutcome::Cancelled })
+        }
+    }
+
+    pub fn open_with(path: &std::path::Path) {
+        // The documented way to show the "Open with" chooser for one file.
+        let result = std::process::Command::new("rundll32.exe")
+            .arg("shell32.dll,OpenAs_RunDLL")
+            .arg(path)
+            .spawn();
+        if let Err(e) = result {
+            log::warn!("could not show Open with: {e}");
+        }
+    }
+
     pub fn hide_window(window: &Window) {
         if let Some(hwnd) = hwnd(window) {
             // SAFETY: `hwnd` belongs to a live GPUI window.
@@ -170,7 +276,7 @@ mod imp {
 mod imp {
     use gpui::Window;
 
-    use super::Backdrop;
+    use super::{Backdrop, DragOutcome};
 
     pub fn supports_backdrops() -> bool {
         false
@@ -181,6 +287,16 @@ mod imp {
     }
 
     pub fn sync_chrome(_: &mut Window, _: Backdrop, _: bool) {}
+
+    pub fn native_handle(_: &Window) -> Option<usize> {
+        None
+    }
+
+    pub fn drag_file_out(_: usize, _: &std::path::Path) -> Result<DragOutcome, String> {
+        Err("dragging files out is only supported on Windows".into())
+    }
+
+    pub fn open_with(_: &std::path::Path) {}
 
     pub fn hide_window(_: &Window) {}
 
