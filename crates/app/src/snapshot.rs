@@ -311,6 +311,11 @@ fn run_command(line: &str, cx: &mut App) {
                 w.update(cx, |_, _, cx| crate::brand::show_about(cx)).ok();
             }
         }
+        "toggle-tree" => {
+            for w in windows.iter().filter_map(|w| w.downcast::<MainWindow>()) {
+                w.update(cx, |m, _, cx| m.toggle_categories(cx)).ok();
+            }
+        }
         "progress-details" => {
             for w in windows.iter().filter_map(|w| w.downcast::<ProgressWindow>()) {
                 w.update(cx, |p, window, cx| p.toggle_details(window, cx)).ok();

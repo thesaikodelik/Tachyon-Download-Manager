@@ -5,7 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::{
-    AnyElement, App, AppContext, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight,
+    Animation, AnimationExt, AnyElement, App, AppContext, ClipboardItem, Context, Entity, FocusHandle, Focusable,
+    FontWeight, Transformation, radians, svg,
     KeyBinding, MouseButton, MouseDownEvent, Pixels, Point, PromptLevel, SharedString, Task,
     UniformListScrollHandle, Window, actions, anchored, deferred, div, prelude::*, px, uniform_list,
 };
@@ -27,6 +28,8 @@ actions!(
 
 const CONTEXT: &str = "MainWindow";
 const ROW_HEIGHT: f32 = 30.;
+/// How long folding or unfolding the categories takes.
+const TREE_MOTION: Duration = Duration::from_millis(220);
 /// Where the category tree's guide line runs: under the chevron that folds the
 /// categories (10px padding + half the 10px glyph, minus half the line's width).
 const TREE_LINE_X: f32 = 14.;
@@ -146,6 +149,10 @@ pub struct MainWindow {
     scroll: UniformListScrollHandle,
     pub(crate) context_menu: Option<ContextMenu>,
     categories_open: bool,
+    /// Bumped on every fold or unfold, so each one restarts its animation.
+    tree_toggles: usize,
+    /// The categories are folding away; they stay drawn until the animation ends.
+    tree_closing: bool,
     queue_running: bool,
     total_speed: u64,
     pub(crate) brand: Entity<Brand>,
@@ -181,6 +188,8 @@ impl MainWindow {
             brand: cx.new(|_| Brand::default()),
             batch: BTreeSet::new(),
             categories_open: true,
+            tree_toggles: 0,
+            tree_closing: false,
             queue_running: false,
             total_speed: 0,
             _poll: poll,
@@ -552,6 +561,75 @@ impl MainWindow {
             })
     }
 
+    /// Folds or unfolds the categories, animated.
+    pub(crate) fn toggle_categories(&mut self, cx: &mut Context<Self>) {
+        self.tree_toggles += 1;
+        if self.categories_open {
+            self.categories_open = false;
+            self.tree_closing = true;
+            let toggles = self.tree_toggles;
+            cx.spawn(async move |this, cx| {
+                gpui::Timer::after(TREE_MOTION).await;
+                this.update(cx, |this, cx| {
+                    // Unless it was unfolded again meanwhile.
+                    if this.tree_toggles == toggles {
+                        this.tree_closing = false;
+                        cx.notify();
+                    }
+                })
+                .ok();
+            })
+            .detach();
+        } else {
+            self.categories_open = true;
+            self.tree_closing = false;
+        }
+        cx.notify();
+    }
+
+    /// The categories' container, sliding open or shut (and fading) after a toggle.
+    fn animate_tree(&self, tree: AnyElement) -> AnyElement {
+        if self.tree_toggles == 0 {
+            return tree;
+        }
+        let opening = self.categories_open;
+        let rows = self.engine.settings().categories.len() + 1;
+        // Category rows are 28px apart by 2px gaps.
+        let full = rows as f32 * 28. + (rows.saturating_sub(1)) as f32 * 2.;
+        div()
+            .overflow_hidden()
+            .child(tree)
+            .with_animation(
+                ("tree-motion", self.tree_toggles),
+                Animation::new(TREE_MOTION).with_easing(gpui::ease_out_quint()),
+                move |el, t| {
+                    let shown = if opening { t } else { 1. - t };
+                    el.h(px(full * shown)).opacity(shown)
+                },
+            )
+            .into_any_element()
+    }
+
+    /// The fold chevron, turning a quarter between pointing right and down.
+    fn render_chevron(&self, theme: &Theme) -> AnyElement {
+        let glyph = svg().path(Icon::ChevronRight.path()).size(px(10.)).text_color(theme.muted);
+        let open = self.categories_open;
+        if self.tree_toggles == 0 {
+            let angle = if open { std::f32::consts::FRAC_PI_2 } else { 0. };
+            return glyph.with_transformation(Transformation::rotate(radians(angle))).into_any_element();
+        }
+        glyph
+            .with_animation(
+                ("tree-chevron", self.tree_toggles),
+                Animation::new(TREE_MOTION).with_easing(gpui::ease_out_quint()),
+                move |glyph, t| {
+                    let turn = if open { t } else { 1. - t };
+                    glyph.with_transformation(Transformation::rotate(radians(turn * std::f32::consts::FRAC_PI_2)))
+                },
+            )
+            .into_any_element()
+    }
+
     fn render_sidebar(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let settings = self.engine.settings();
         let mut categories: Vec<String> = settings.categories.iter().map(|c| c.name.clone()).collect();
@@ -559,7 +637,6 @@ impl MainWindow {
         let count = |f: &Filter| self.downloads.iter().filter(|d| f.matches(d)).count();
 
         let mut items: Vec<AnyElement> = Vec::new();
-        let chevron = if self.categories_open { Icon::ChevronDown } else { Icon::ChevronRight };
         items.push(
             div()
                 .flex()
@@ -569,11 +646,8 @@ impl MainWindow {
                         .id("toggle-categories")
                         .pl(px(10.))
                         .cursor_pointer()
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.categories_open = !this.categories_open;
-                            cx.notify();
-                        }))
-                        .child(icon(chevron, px(10.), theme.muted)),
+                        .on_click(cx.listener(|this, _, _, cx| this.toggle_categories(cx)))
+                        .child(self.render_chevron(theme)),
                 )
                 .child(
                     div().flex_1().ml(px(-8.)).child(self.sidebar_item(
@@ -589,7 +663,7 @@ impl MainWindow {
                 )
                 .into_any_element(),
         );
-        if self.categories_open {
+        if self.categories_open || self.tree_closing {
             let mut children: Vec<AnyElement> = Vec::new();
             for category in categories {
                 let filter = Filter::Category(category.clone());
@@ -632,6 +706,8 @@ impl MainWindow {
                     .children(children)
                     .into_any_element(),
             );
+            let tree = items.pop().expect("just pushed");
+            items.push(self.animate_tree(tree));
         }
         items.push(self.sidebar_item("unfinished", "Unfinished".into(), Icon::Clock, Filter::Unfinished, count(&Filter::Unfinished), false, theme, cx).into_any_element());
         items.push(self.sidebar_item("finished", "Finished".into(), Icon::CheckCircle, Filter::Finished, count(&Filter::Finished), false, theme, cx).into_any_element());
