@@ -784,7 +784,20 @@ impl Render for TextInput {
             })
             .child(TextElement { input: cx.entity() })
             .when(theme.fluent && editable_focus, |this| {
-                this.child(div().absolute().left_0().right_0().bottom_0().h(px(2.)).bg(theme.accent))
+                // Fluent's focus underline, kept to the straight part of the bottom edge:
+                // GPUI clips children to a rectangle, so a full-width line would stick
+                // out under rounded (and pill-shaped) corners.
+                let inset = if theme.liquid { theme.control_height / 2. } else { theme.radius };
+                this.child(
+                    div()
+                        .absolute()
+                        .left(px(inset))
+                        .right(px(inset))
+                        .bottom_0()
+                        .h(px(2.))
+                        .rounded_full()
+                        .bg(theme.accent),
+                )
             })
     }
 }
