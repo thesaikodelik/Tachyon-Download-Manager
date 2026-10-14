@@ -27,10 +27,11 @@ actions!(
 
 const CONTEXT: &str = "MainWindow";
 const ROW_HEIGHT: f32 = 30.;
-/// Where the category tree's guide line runs, in line with All Downloads' accent bar.
-const TREE_LINE_X: f32 = 20.;
+/// Where the category tree's guide line runs: under the chevron that folds the
+/// categories (10px padding + half the 10px glyph, minus half the line's width).
+const TREE_LINE_X: f32 = 14.;
 /// Where indented category rows start, just past the guide line.
-const TREE_INDENT: f32 = 30.;
+const TREE_INDENT: f32 = 26.;
 
 /// How far the current batch of downloads is, all together: everything that has run
 /// since downloading last started (finished ones included, so the bolt never drops
@@ -613,14 +614,16 @@ impl MainWindow {
                     .flex()
                     .flex_col()
                     .gap(px(2.))
-                    // The tree's guide line, from under All Downloads to the last category.
+                    // The tree's guide line: from just under the chevron to the bottom of
+                    // the last category. The chevron sits mid-row in All Downloads' 32px
+                    // row, so its lower tip is 11px above that row's end (plus the 2px gap).
                     .when(theme.fluent, |this| {
                         this.child(
                             div()
                                 .absolute()
                                 .left(px(TREE_LINE_X))
-                                .top(px(-4.))
-                                .bottom(px(14.))
+                                .top(px(-11.))
+                                .bottom_0()
                                 .w(px(2.))
                                 .rounded_full()
                                 .bg(theme.accent.opacity(0.3)),
