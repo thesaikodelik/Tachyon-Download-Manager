@@ -274,14 +274,19 @@ pub(crate) async fn list(
     let started = std::time::Instant::now();
     let (yt_dlp, js) = ready_tools(client, settings, tools_dir).await.map_err(|e| format!("couldn't get yt-dlp: {e}"))?;
     let tools_ready = started.elapsed();
-    let mut cmd = command(&yt_dlp, settings, js.as_deref());
-    let jar = CookieFile::write(tools_dir, cookies);
-    if let Some(jar) = &jar {
-        jar.add_to(&mut cmd);
+    // Signed in, YouTube takes four times as long to read: try without the browser's
+    // cookies first, and use them only if the page needs them.
+    let mut output = read_page(&yt_dlp, js.as_deref(), url, &[], settings, tools_dir).await;
+    note_timing(tools_dir, url, 0, tools_ready, started.elapsed(), &output);
+    let needs_sign_in = |out: &Result<std::io::Result<std::process::Output>, tokio::time::error::Elapsed>| match out {
+        Ok(Ok(out)) if !out.status.success() => wants_sign_in(&String::from_utf8_lossy(&out.stderr)),
+        _ => false,
+    };
+    if !cookies.is_empty() && needs_sign_in(&output) {
+        let again = std::time::Instant::now();
+        output = read_page(&yt_dlp, js.as_deref(), url, cookies, settings, tools_dir).await;
+        note_timing(tools_dir, url, cookies.len(), Duration::ZERO, again.elapsed(), &output);
     }
-    cmd.arg("-J").arg("--").arg(url);
-    let output = tokio::time::timeout(LIST_TIMEOUT, cmd.output()).await;
-    note_timing(tools_dir, url, cookies.len(), tools_ready, started.elapsed(), &output);
     let output = output.map_err(|_| "the site took too long to answer".to_string())?.map_err(|e| e.to_string())?;
     if !output.status.success() {
         return Err(last_error(&String::from_utf8_lossy(&output.stderr)));
@@ -289,6 +294,33 @@ pub(crate) async fn list(
     let json: Value = serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
     save_page(tools_dir, url, &output.stdout);
     Ok(choices(&json, find(tools_dir, FFMPEG).is_some()))
+}
+
+/// One read of a page by yt-dlp, with `cookies` if any. Lists (a channel, a home
+/// page) are read flat: their videos are not each looked into.
+async fn read_page(
+    yt_dlp: &Path,
+    js: Option<&Path>,
+    url: &str,
+    cookies: &[BrowserCookie],
+    settings: &Settings,
+    tools_dir: &Path,
+) -> Result<std::io::Result<std::process::Output>, tokio::time::error::Elapsed> {
+    let mut cmd = command(yt_dlp, settings, js);
+    let jar = CookieFile::write(tools_dir, cookies);
+    if let Some(jar) = &jar {
+        jar.add_to(&mut cmd);
+    }
+    cmd.args(["--flat-playlist", "-J", "--"]).arg(url);
+    tokio::time::timeout(LIST_TIMEOUT, cmd.output()).await
+}
+
+/// Whether yt-dlp's complaint is one the user's being signed in would cure.
+fn wants_sign_in(stderr: &str) -> bool {
+    let text = stderr.to_ascii_lowercase();
+    ["sign in", "log in", "login", "logged-in", "cookies", "age-restricted", "age restricted", "inappropriate", "members", "private video", "confirm you", "not a bot", "account"]
+        .iter()
+        .any(|hint| text.contains(hint))
 }
 
 /// Notes how long reading a page took, to find what makes the quality menu slow.

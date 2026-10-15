@@ -181,6 +181,13 @@
     if (!/^https?:/i.test(src)) pageQualities(true);
   }
 
+  // On YouTube only a video's own page can be downloaded: the previews that play
+  // on the home page and in lists belong to other pages.
+  const onYouTube = /(^|\.)youtube\.com$/.test(site);
+  function downloadablePage() {
+    return !onYouTube || /^\/(watch|shorts\/|live\/)/.test(location.pathname);
+  }
+
   function show(v) {
     if (video !== v) {
       video = v;
@@ -207,7 +214,10 @@
   document.addEventListener(
     "mousemove",
     (e) => {
-      if (!enabled || hiddenHere || document.fullscreenElement) return;
+      if (!enabled || hiddenHere || document.fullscreenElement || !downloadablePage()) {
+        if (video) hide();
+        return;
+      }
       if (overUi) return;
       const v = videoAt(e.clientX, e.clientY);
       if (v) {
@@ -435,9 +445,9 @@
 
   // YouTube changes pages without reloading: read each video page's qualities as
   // it opens, so the menu is ready before the pointer is.
-  if (/(^|\.)youtube\.com$/.test(site)) {
+  if (onYouTube) {
     const early = () => {
-      if (/^\/(watch|shorts\/)/.test(location.pathname)) setTimeout(() => pageQualities(true), 800);
+      if (downloadablePage()) setTimeout(() => pageQualities(true), 800);
     };
     window.addEventListener("yt-navigate-finish", early);
     early();
