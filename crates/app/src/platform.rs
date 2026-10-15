@@ -144,6 +144,12 @@ pub fn show_window(window: &Window) {
     imp::show_window(window)
 }
 
+/// Puts a window in front of every other app and gives it the keyboard, even while
+/// another app (such as the browser that sent a download) is in front.
+pub fn bring_to_front(window: &Window) {
+    imp::bring_to_front(window)
+}
+
 /// Keeps a shown window off screen (it still renders) until uncloaked, so it
 /// appears complete instead of building up in view.
 pub fn cloak(window: &Window, cloaked: bool) {
@@ -613,6 +619,34 @@ mod imp {
         }
     }
 
+    pub fn bring_to_front(window: &Window) {
+        use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HWND_NOTOPMOST, HWND_TOPMOST,
+            SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SetWindowPos,
+        };
+        let Some(hwnd) = hwnd(window) else { return };
+        // SAFETY: plain Win32 calls on a live GPUI window; the thread input is
+        // detached again before returning.
+        unsafe {
+            // Above everything for a moment, so it shows even if focus is refused.
+            let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW;
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags);
+            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+            // Windows lets only the app in front hand over focus: share its input
+            // state for a moment, as if it had.
+            let front = GetForegroundWindow();
+            let front_thread = if front.is_null() { 0 } else { GetWindowThreadProcessId(front, std::ptr::null_mut()) };
+            let ours = GetCurrentThreadId();
+            let attached = front_thread != 0 && front_thread != ours && AttachThreadInput(ours, front_thread, 1) != 0;
+            BringWindowToTop(hwnd);
+            SetForegroundWindow(hwnd);
+            if attached {
+                AttachThreadInput(ours, front_thread, 0);
+            }
+        }
+    }
+
     pub fn cloak(window: &Window, cloaked: bool) {
         use windows_sys::Win32::Graphics::Dwm::DWMWA_CLOAK;
         if let Some(hwnd) = hwnd(window) {
@@ -700,6 +734,8 @@ mod imp {
     pub fn move_window_by(_: &Window, _: gpui::Pixels) {}
 
     pub fn show_window(_: &Window) {}
+
+    pub fn bring_to_front(_: &Window) {}
 
     pub fn cloak(_: &Window, _: bool) {}
 }

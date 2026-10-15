@@ -560,6 +560,26 @@ impl IntoElement for TextElement {
     }
 }
 
+/// How much of a cut-off line fades out before the edge.
+const FADE_WIDTH: f32 = 44.;
+
+/// Reshapes `line` so the characters in its last visible `FADE_WIDTH` pixels grow
+/// fainter towards `width`.
+fn fade_end(line: &ShapedLine, run: &TextRun, width: Pixels, font_size: Pixels, window: &mut Window) -> ShapedLine {
+    let text = line.text.clone();
+    let fade_from = width - px(FADE_WIDTH);
+    let start = line.closest_index_for_x(fade_from).min(text.len());
+    let mut runs = vec![TextRun { len: start, ..run.clone() }];
+    for (offset, ch) in text[start..].char_indices() {
+        let index = start + offset;
+        let x = line.x_for_index(index);
+        let t = ((x - fade_from) / px(FADE_WIDTH)).clamp(0., 1.);
+        runs.push(TextRun { len: ch.len_utf8(), color: run.color.opacity(1. - 0.92 * t), ..run.clone() });
+    }
+    runs.retain(|r| r.len > 0);
+    window.text_system().shape_line(text, font_size, &runs, None)
+}
+
 impl Element for TextElement {
     type RequestLayoutState = ();
     type PrepaintState = PrepaintState;
@@ -665,6 +685,14 @@ impl Element for TextElement {
         if line.width <= width || !input.focus_handle.is_focused(window) {
             scroll_x = px(0.);
         }
+        // An address cut off at the right fades out there, to show it goes on.
+        let cut_off = scroll_x == px(0.)
+            && line.width > width
+            && !input.masked
+            && input.marked_range.is_none()
+            && !input.content.is_empty()
+            && !input.focus_handle.is_focused(window);
+        let line = if cut_off { fade_end(&line, &runs[0], width, font_size, window) } else { line };
         // Right-align numbers that fit.
         let align_offset = if input.numeric && line.width < width && !input.content.is_empty() {
             width - line.width - px(2.)

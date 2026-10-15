@@ -305,11 +305,22 @@ pub fn open_add_dialog(prefill: AddPrefill, cx: &mut App) {
     // Opens at the size of the first step so it stays centred; later steps resize it.
     let fluent = crate::theme::style() != tachyon_engine::WindowStyle::Classic;
     let bounds = centered(if fluent { size(px(580.), px(136.)) } else { size(px(560.), px(400.)) }, cx);
-    open_styled(dialog_options("Add Download", bounds), cx, |window, cx| {
+    // Sent from the browser: Tachyon is in the background and must come forward.
+    let from_browser = matches!(prefill, AddPrefill::Captured(_));
+    let handle = open_styled(dialog_options("Add Download", bounds), cx, |window, cx| {
         cx.new(|cx| AddDialog::new(prefill, window, cx))
-    })
-    .ok();
+    });
     cx.activate(true);
+    if from_browser && let Ok(handle) = handle {
+        cx.spawn(async move |cx| {
+            // Once now, and again after the window has drawn and uncloaked.
+            for delay in [0, 600] {
+                cx.background_executor().timer(std::time::Duration::from_millis(delay)).await;
+                handle.update(cx, |_, window, _| crate::platform::bring_to_front(window)).ok();
+            }
+        })
+        .detach();
+    }
 }
 
 pub const PROGRESS_SIZE: (f32, f32) = (540., 360.);
