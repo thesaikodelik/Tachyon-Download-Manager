@@ -1,192 +1,195 @@
-<p align="center"><img src="docs/screenshots/windows/icon.png" width="88" alt=""></p>
-
-<h1 align="center">Tachyon Download Manager</h1>
-
 <p align="center">
-  A fast, light, open-source <b>download manager</b> for Windows, in the spirit of
-  <b>Internet Download Manager (IDM)</b>: segmented downloads, browser integration, video
-  downloads, queues and a scheduler, in a Windows 11 <i>Liquid Glass</i> look.
+  <img src="docs/screenshots/windows/logo-banner.jpg" alt="Tachyon Download Manager" width="100%">
 </p>
 
 <p align="center">
-  <a href="README.fa.md">فارسی</a> ·
-  <a href="#install">Install</a> ·
-  <a href="#browser-extension">Browser extension</a> ·
-  <a href="#build-from-source">Build</a> ·
-  <a href="https://github.com/sponsors/thesaikodelik">Buy me a coffee</a>
+  <a href="https://github.com/thesaikodelik/Tachyon-Download-Manager/releases"><img src="https://img.shields.io/badge/download-TachyonSetup.exe-0067c0?style=for-the-badge&logo=windows11&logoColor=white" alt="Download for Windows"></a>
 </p>
 
-<p align="center"><img src="docs/screenshots/windows/main.png" alt="Tachyon's main window with downloads in progress"></p>
+<p align="center">
+  <img src="https://img.shields.io/badge/Windows-11-0078d4?logo=windows11&logoColor=white" alt="Windows 11">
+  <img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT license">
+  <img src="https://img.shields.io/badge/made%20with-Rust-b7410e?logo=rust&logoColor=white" alt="Made with Rust">
+  <img src="https://img.shields.io/badge/size-23%20MB-6e40c9" alt="23 MB">
+  <a href="https://github.com/sponsors/thesaikodelik"><img src="https://img.shields.io/badge/buy%20me%20a%20coffee-%E2%98%95-b7793e" alt="Buy me a coffee"></a>
+</p>
 
-Tachyon was created for macOS by [sonatina-dream](https://github.com/sonatina-dream/Tachyon-Download-Manager).
-This is the **Windows edition**, by [thesaikodelik](https://github.com/thesaikodelik): the same
-download engine, ported to Windows, with a Windows 11 interface and many features added.
+<p align="center">
+  <b>English</b> · <a href="README.fa.md">فارسی</a>
+</p>
 
-| | |
-| --- | --- |
-| ![Progress window with the live segment map](docs/screenshots/windows/progress.png) | ![Download File Info for a YouTube video, with its qualities](docs/screenshots/windows/add-video.png) |
-| **Progress window**: every connection and the live segment map | **Video pages**: pick a quality; picture and sound are joined for you |
-| ![Download Links](docs/screenshots/windows/links.png) | ![Options](docs/screenshots/windows/options.png) |
-| **Download all links of a page**, filtered by type | **Options**, laid out like Windows 11 Settings |
+<p align="center">
+  <img src="docs/screenshots/windows/banner.png" alt="Tachyon's main window on Windows 11" width="100%">
+</p>
 
-## Features
+**Tachyon** is a free, open-source **download manager for Windows**, in the spirit of
+**Internet Download Manager (IDM)**. It splits every download across many connections, takes
+over downloads from your browser, saves **videos from YouTube and hundreds of other sites**,
+and wraps it all in a Windows 11 *Liquid Glass* look. One 23 MB program, no ads, no tracking.
 
-**Downloading**
+<table>
+  <tr>
+    <td align="center" width="25%">⚡<br><b>Fast</b><br><sub>up to 32 connections per file</sub></td>
+    <td align="center" width="25%">🎬<br><b>Videos</b><br><sub>YouTube and more, up to 4K</sub></td>
+    <td align="center" width="25%">🧩<br><b>Every browser</b><br><sub>Chrome, Edge, Firefox, Brave…</sub></td>
+    <td align="center" width="25%">🔒<br><b>Private</b><br><sub>everything stays on your PC</sub></td>
+  </tr>
+</table>
 
-- **Dynamic file segmentation**, as in IDM. A download starts on one connection; every free
-  connection then takes over half of the largest remaining segment, up to 32 connections
-  (8 by default). Connections are reused instead of reconnecting.
-- **Resume anywhere.** After a pause, a crash or a reboot only the missing bytes are fetched;
-  if the file changed on the server, the download starts over.
-- **Polite to servers**: connections ramp up gradually, `429`/`503` and `Retry-After` are
-  honoured, and retries back off. Per-server connection limits are in Options.
-- **Speed limiter** per download and overall, a **download limit** per period, a **main queue**
-  and a **scheduler** that can sleep or shut down the PC when it's done.
-- **Automatic categories** (Compressed, Documents, Music, Programs, Video) with their own folders,
-  site logins (passwords stored with Windows' own encryption), proxies (system, HTTP, SOCKS5),
-  a temporary folder and clipboard monitoring.
+---
 
-**Video**
+## ⚡ Downloads that use your whole connection
 
-- A small **download button** appears just outside the corner of videos on web pages. It opens
-  Tachyon's Download File Info with the video's **qualities** (up to 4K) and sizes.
-- **YouTube and many other sites** through [yt-dlp](https://github.com/yt-dlp/yt-dlp). Tachyon
-  fetches yt-dlp and [QuickJS](https://github.com/quickjs-ng/quickjs) itself when first needed
-  and keeps them up to date. It joins picture and sound into one MP4 with its own small muxer,
-  so no ffmpeg is needed.
-- Hard to break: if a way of downloading fails, Tachyon updates yt-dlp and tries ever more
-  forgiving ones before giving up, and keeps a report of what went wrong.
-- Drop or paste a video page's address (from the address bar, say) and Tachyon offers its
-  qualities too.
+<img src="docs/screenshots/windows/progress.png" align="right" width="46%" alt="Progress window with every connection and the live segment map">
 
-**Browser integration** (Chrome, Edge, Brave, Opera, Vivaldi and other Chromium browsers; Firefox)
+Tachyon splits a download *while it runs*, like IDM: every free connection takes over half of
+the largest part still missing, up to 32 at a time. Connections are reused, so nothing waits
+to reconnect.
 
-- Takes over downloads of the file types you choose, from the browsers you tick (Tachyon lists
-  the installed ones and shows whether each has the extension).
-- *Download with Tachyon* on links; *Download all links* / *Download selected links* on pages.
+- **Resume anywhere**: after a pause, a crash or a reboot, only the missing bytes are fetched.
+- **Kind to servers**: it ramps up gently and honours their limits.
+- **Speed limiter**, a **queue** and a **scheduler** that can sleep or shut down the PC when done.
+- **Categories** that sort files into their own folders, site logins and proxies.
+
+<br clear="right">
+
+## 🎬 Videos, one click away
+
+<img src="docs/screenshots/windows/video-button.png" width="75%" alt="Tachyon's Download button next to a video on YouTube">
+
+A small **Download** button appears beside videos you point at. Click it and Tachyon shows every
+quality, up to 4K, with its size:
+
+<p align="center">
+  <img src="docs/screenshots/windows/add-video.png" width="70%" alt="Picking a video's quality in Tachyon">
+</p>
+
+- **YouTube and hundreds of sites**, through [yt-dlp](https://github.com/yt-dlp/yt-dlp), which
+  Tachyon fetches and keeps up to date by itself.
+- Picture and sound are joined into **one MP4** by Tachyon itself; no ffmpeg needed.
+- If a site changes, Tachyon updates yt-dlp and tries other ways before giving up.
+- Or just **drop a video page's address** on Tachyon.
+
+## 🧩 Works with your browser
+
+<img src="docs/screenshots/windows/links.png" align="right" width="52%" alt="Download all links of a page">
+
+- **Takes over downloads** of the file types you choose, from the browsers you tick.
+- **Download all links** of a page, or just the ones you selected, filtered by type.
 - Hold **Alt** while clicking to keep a download in the browser.
-- Starts Tachyon when it isn't running, and brings its window in front of the browser.
-- Links can also be dropped on Tachyon's main window.
+- Not running? The extension **starts Tachyon** for you.
+- **Drop links** on Tachyon's window.
 
-**Windows**
+<br clear="right">
 
-- **Themes**: Liquid Glass (default), Liquid Glass Smoke, Solid and Classic; light, dark or
-  following Windows. Motion follows Windows' animation setting.
-- Its own **installer and uninstaller**, without administrator rights; starts with Windows in the
-  notification area if you like.
-- Drag a finished file from *Download complete* to any folder.
+## 🎨 Make it yours
+
+<img src="docs/screenshots/windows/themes.png" alt="Tachyon in four themes: Liquid Glass, Smoke, Solid and Classic">
+
+Four themes: **Liquid Glass** (front), **Liquid Glass Smoke**, **Solid** and **Classic**; light,
+dark or following Windows. Animations follow Windows' own setting.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/windows/options.png" alt="Options"></td>
+    <td width="50%"><img src="docs/screenshots/windows/complete.png" alt="Download complete"><br><br><img src="docs/screenshots/windows/about.png" width="60%" alt="About"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Options, laid out like Windows 11 Settings</sub></td>
+    <td align="center"><sub>Drag a finished file straight to any folder</sub></td>
+  </tr>
+</table>
+
+## 📦 Install
+
+<img src="docs/screenshots/windows/setup.png" align="right" width="44%" alt="Tachyon Setup">
+
+1. Download **TachyonSetup.exe** from [Releases](https://github.com/thesaikodelik/Tachyon-Download-Manager/releases).
+2. Run it. It installs for your account only, **no administrator rights needed**, and can fetch
+   the video tools right away.
+3. Add the [browser extension](#-browser-extension).
+
+> New programs may get *"Windows protected your PC"* until they're widely downloaded: choose
+> **More info → Run anyway**. Tachyon is open source; read every line, or build it yourself.
+
+Uninstall from **Settings → Apps**. Your downloaded files are never touched.
+
+<br clear="right">
+
+## 🧩 Browser extension
+
+| Browser | How |
+| --- | --- |
+| **Chrome, Brave, Opera, Vivaldi** and other Chromium browsers | Get `tachyon-extension.zip` from [Releases](https://github.com/thesaikodelik/Tachyon-Download-Manager/releases) and unzip it, or use the `extension` folder of your installation (*Options → Browser → Show Extension Folder*). Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and choose the folder. |
+| **Microsoft Edge** | From Edge Add-ons (coming soon). Meanwhile, load the same folder at `edge://extensions`. |
+| **Firefox** | From Firefox Add-ons (coming soon). |
+
+A green dot next to the browser in *Options → Browser* means it's connected.
 
 <details>
-<summary><b>More screenshots: themes, installer, dialogs</b></summary>
+<summary><b>🛠 Build from source, architecture and how IDM was studied</b></summary>
 
-| Liquid Glass Smoke | Solid | Classic |
-| --- | --- | --- |
-| ![Smoke](docs/screenshots/windows/theme-smoke.png) | ![Solid](docs/screenshots/windows/theme-solid.png) | ![Classic](docs/screenshots/windows/theme-classic.png) |
+### Build
 
-| Installer | Download complete | About |
-| --- | --- | --- |
-| ![Installer](docs/screenshots/windows/setup.png) | ![Download complete](docs/screenshots/windows/complete.png) | ![About](docs/screenshots/windows/about.png) |
+Stable Rust with the MSVC toolchain and Visual Studio Build Tools (*Desktop development with C++*).
 
-</details>
+```powershell
+winget install Rustlang.Rustup
+cargo build --release -p tachyon          # target\release\tachyon.exe
+cargo test --workspace
+```
 
-## Install
+`tachyon.exe` is its own installer: copied as `TachyonSetup.exe` (or run with `--setup`) it installs
+itself. State lives in `%APPDATA%\Tachyon`; `TACHYON_DATA_DIR` selects another profile.
+`cargo test -p tachyon-engine --test video_sites -- --ignored` downloads from real video sites.
 
-1. Download **TachyonSetup.exe** from the [Releases](https://github.com/thesaikodelik/Tachyon-Download-Manager/releases) page.
-2. Run it. It installs for your account only (no administrator rights) and can add shortcuts,
-   start with Windows and fetch the video tools right away.
-3. Add the [browser extension](#browser-extension).
-
-> Windows may show *"Windows protected your PC"* for a new program that isn't widely downloaded
-> yet: choose **More info → Run anyway**. Tachyon is open source; you can read every line, or
-> [build it yourself](#build-from-source).
-
-Uninstall from **Settings → Apps → Installed apps**. Your download list and settings are kept
-unless you choose otherwise; downloaded files are never touched.
-
-## Browser extension
-
-- **Chrome, Brave, Opera, Vivaldi and other Chromium browsers**: download
-  `tachyon-extension.zip` from [Releases](https://github.com/thesaikodelik/Tachyon-Download-Manager/releases)
-  and unzip it (or use the `extension` folder of your Tachyon installation, which
-  *Options → Browser → Show Extension Folder* opens). Open `chrome://extensions`, turn on
-  **Developer mode**, click **Load unpacked** and choose the folder.
-- **Microsoft Edge** and **Firefox**: from their add-on stores (coming soon). Until then, Edge
-  loads the same folder as Chrome (`edge://extensions`); Firefox loads *Show Firefox Version*
-  from *Options → Browser* through `about:debugging` until it restarts.
-
-Then *Options → Browser* in Tachyon shows a green dot next to the browser.
-
-## How IDM was studied
-
-IDM is closed source and its licence forbids disassembly. Tachyon is a **clean-room** work:
-only IDM's public documentation and its observable behaviour were used, never its code or
-binaries. Tachyon is not affiliated with or endorsed by Tonec Inc.
-
-| IDM behaviour (source) | Tachyon |
-| --- | --- |
-| "Dynamic file segmentation": when a connection is free, the largest remaining part is halved and the new connection takes the second half ([features][f]). | `SegmentMap::split_largest`, `crates/engine/src/segment.rs` |
-| Connections are reused without repeating connect/login stages ([f]). | The probe response becomes segment 1; workers loop on `next_work()`. |
-| Resume after lost connections, shutdowns or power cuts ([f]). | Segment checkpoints in `downloads.json`, validator checks, the part file. |
-| Main window, progress dialog with a per-segment chart, queues, scheduler, categories, browser takeover ([help][h], [scheduler][q]). | `main_window.rs`, `progress_window.rs`, `scheduler_window.rs`, `categories.rs`, `extension/` |
-
-[f]: https://www.internetdownloadmanager.com/features2.html
-[h]: https://www.internetdownloadmanager.com/support/using_idm/using_idm.html
-[q]: https://www.internetdownloadmanager.com/support/idm-scheduler/idm_queues.html
-
-## Architecture
+### Architecture
 
 ```
 crates/
-  engine/   tachyon-engine: the download core, independent of the interface (tokio, reqwest/rustls)
+  engine/   the download core, independent of the interface (tokio, reqwest/rustls)
     segment.rs      dynamic segmentation
     task.rs         one download: probe → part file → connections → finish
     engine.rs       public API, queue, scheduler, persistence, events
     media.rs        video pages through yt-dlp, with fallbacks
     mux.rs          joins picture and sound into one MP4
     integration.rs  the 127.0.0.1 endpoint for the browser extension
-  app/      tachyon: the GPUI app (and its own installer, setup.rs)
-extension/  Manifest V3 browser extension (Chromium and Firefox)
+  app/      the GPUI app, and its own installer (setup.rs)
+extension/  Manifest V3 extension for Chromium browsers and Firefox
 ```
 
-**Browser endpoint security.** The endpoint listens on 127.0.0.1 only, requires a loopback `Host`
-(no DNS rebinding), an extension or absent `Origin`, and an `X-Tachyon-Client` header that web
-pages can't send without a CORS preflight, which is never approved. Requests are traced to the
-program that sent them, so only the browsers you tick are taken over. Only Tachyon's own
-extension may start Tachyon through native messaging.
+The browser endpoint listens on 127.0.0.1 only, requires a loopback `Host` (no DNS rebinding), an
+extension or absent `Origin`, and a header web pages can't send without an approved CORS
+preflight. Requests are traced to the program that sent them, so only the browsers you tick are
+taken over, and only Tachyon's own extension may start it.
 
-## Build from source
+### How IDM was studied
 
-Requires stable Rust with the MSVC toolchain and Visual Studio Build Tools (the *Desktop
-development with C++* workload). GPUI renders through DirectX 11.
+IDM is closed source and its licence forbids disassembly. Tachyon is a **clean-room** work: only
+IDM's public documentation and observable behaviour were used, never its code or binaries.
 
-```powershell
-winget install Rustlang.Rustup
-winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
-cargo build --release -p tachyon          # target\release\tachyon.exe
-cargo test --workspace
-```
+| IDM behaviour (source) | Tachyon |
+| --- | --- |
+| "Dynamic file segmentation": a free connection halves the largest remaining part ([features][f]). | `SegmentMap::split_largest` in `segment.rs` |
+| Connections are reused without reconnecting ([f]). | The probe response becomes segment 1; workers loop on `next_work()`. |
+| Resume after lost connections, shutdowns or power cuts ([f]). | Segment checkpoints, validator checks, the part file. |
+| Main window, progress dialog with a per-segment chart, queues, scheduler, categories, browser takeover ([help][h], [scheduler][q]). | `main_window.rs`, `progress_window.rs`, `scheduler_window.rs`, `categories.rs`, `extension/` |
 
-`tachyon.exe` is its own installer: copied as `TachyonSetup.exe` (or run with `--setup`) it
-installs itself. State lives in `%APPDATA%\Tachyon`; set `TACHYON_DATA_DIR` for a separate
-profile. `cargo test -p tachyon-engine --test video_sites -- --ignored` downloads from real video
-sites to check that path end to end.
+[f]: https://www.internetdownloadmanager.com/features2.html
+[h]: https://www.internetdownloadmanager.com/support/using_idm/using_idm.html
+[q]: https://www.internetdownloadmanager.com/support/idm-scheduler/idm_queues.html
 
-For macOS, use [the original project](https://github.com/sonatina-dream/Tachyon-Download-Manager).
+</details>
 
-## Please note
+## ❤️ Credits and support
 
-Download only what you have the right to. Many sites, YouTube among them, allow downloading
-only of content you own or that is offered for download; following their terms is up to you.
+Tachyon was created for macOS by **[sonatina-dream](https://github.com/sonatina-dream/Tachyon-Download-Manager)**,
+including the download engine at its heart. The Windows edition is by **[thesaikodelik](https://github.com/thesaikodelik)**.
 
-## Credits and support
+If it's useful to you, you can **[buy me a coffee](https://github.com/sponsors/thesaikodelik)** ☕.
+Entirely optional; Tachyon stays free.
 
-- **[sonatina-dream](https://github.com/sonatina-dream/Tachyon-Download-Manager)** created Tachyon
-  for macOS, including its download engine.
-- **[thesaikodelik](https://github.com/thesaikodelik)** made the Windows edition.
+> **Please note:** download only what you have the right to. Many sites, YouTube among them,
+> allow downloading only of your own content or content offered for download.
 
-If the Windows edition is useful to you, you can [buy me a coffee](https://github.com/sponsors/thesaikodelik).
-It's optional; everything stays free.
-
-## License
-
-[MIT](LICENSE). Tachyon is independent and not affiliated with Tonec Inc. or Internet Download Manager.
+<sub>[MIT License](LICENSE). Tachyon is independent and not affiliated with Tonec Inc. or Internet Download Manager.</sub>

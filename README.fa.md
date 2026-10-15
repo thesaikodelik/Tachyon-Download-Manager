@@ -1,128 +1,146 @@
+<p align="center">
+  <img src="docs/screenshots/windows/logo-banner.jpg" alt="تاکیون دانلود منیجر" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/thesaikodelik/Tachyon-Download-Manager/releases"><img src="https://img.shields.io/badge/download-TachyonSetup.exe-0067c0?style=for-the-badge&logo=windows11&logoColor=white" alt="دانلود برای ویندوز"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Windows-11-0078d4?logo=windows11&logoColor=white" alt="ویندوز ۱۱">
+  <img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="مجوز MIT">
+  <img src="https://img.shields.io/badge/made%20with-Rust-b7410e?logo=rust&logoColor=white" alt="ساخته‌شده با Rust">
+  <img src="https://img.shields.io/badge/size-23%20MB-6e40c9" alt="۲۳ مگابایت">
+  <a href="https://github.com/sponsors/thesaikodelik"><img src="https://img.shields.io/badge/buy%20me%20a%20coffee-%E2%98%95-b7793e" alt="یک قهوه مهمانم کنید"></a>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> · <b>فارسی</b>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/windows/banner.png" alt="پنجرهٔ اصلی تاکیون در ویندوز ۱۱" width="100%">
+</p>
+
 <div dir="rtl">
 
-<p align="center"><img src="docs/screenshots/windows/icon.png" width="88" alt=""></p>
+**تاکیون** یک **دانلود منیجر** رایگان و متن‌باز برای **ویندوز** است، با الهام از **اینترنت دانلود منیجر (IDM)**.
+هر دانلود را بین چندین اتصال تقسیم می‌کند، دانلودها را از مرورگر می‌گیرد، **ویدیوهای یوتیوب و صدها سایت دیگر**
+را دانلود می‌کند، و همهٔ این‌ها را در ظاهر شیشه‌ای ویندوز ۱۱ ارائه می‌دهد. یک برنامهٔ ۲۳ مگابایتی، بدون تبلیغ و بدون ردیابی.
 
-<h1 align="center">تاکیون دانلود منیجر (Tachyon Download Manager)</h1>
+</div>
+
+<table dir="rtl">
+  <tr>
+    <td align="center" width="25%">⚡<br><b>سریع</b><br><sub>تا ۳۲ اتصال برای هر فایل</sub></td>
+    <td align="center" width="25%">🎬<br><b>ویدیو</b><br><sub>یوتیوب و سایت‌های دیگر، تا 4K</sub></td>
+    <td align="center" width="25%">🧩<br><b>همهٔ مرورگرها</b><br><sub>کروم، اج، فایرفاکس، بریو…</sub></td>
+    <td align="center" width="25%">🔒<br><b>خصوصی</b><br><sub>همه‌چیز روی کامپیوتر خودتان</sub></td>
+  </tr>
+</table>
+
+---
+
+<div dir="rtl">
+
+## ⚡ دانلود با تمام سرعت اینترنت شما
+
+<img src="docs/screenshots/windows/progress.png" align="left" width="46%" alt="پنجرهٔ پیشرفت با همهٔ اتصال‌ها و نقشهٔ زندهٔ تکه‌ها">
+
+تاکیون مثل IDM دانلود را *در حین دانلود* تقسیم می‌کند: هر اتصال آزاد نیمی از بزرگ‌ترین بخش باقی‌مانده را برمی‌دارد،
+تا ۳۲ اتصال هم‌زمان. اتصال‌ها دوباره استفاده می‌شوند و وقتی برای اتصال دوباره هدر نمی‌رود.
+
+- **ادامهٔ دانلود** بعد از توقف، قطع برق یا خاموش شدن؛ فقط بایت‌های باقی‌مانده گرفته می‌شوند.
+- **رعایت حال سرورها**: سرعت را آرام‌آرام بالا می‌برد و به محدودیت‌هایشان احترام می‌گذارد.
+- **محدودیت سرعت**، **صف** و **زمان‌بند** که می‌تواند در پایان کامپیوتر را خاموش کند.
+- **دسته‌بندی خودکار** فایل‌ها در پوشه‌های جدا، ورود به سایت‌ها و پراکسی.
+
+<br clear="left">
+
+## 🎬 ویدیو با یک کلیک
+
+<img src="docs/screenshots/windows/video-button.png" width="75%" alt="دکمهٔ دانلود تاکیون کنار ویدیوی یوتیوب">
+
+وقتی موس روی ویدیو برود، یک دکمهٔ کوچک **Download** کنارش ظاهر می‌شود. با کلیک روی آن، تاکیون همهٔ کیفیت‌ها
+را تا 4K همراه با حجمشان نشان می‌دهد:
 
 <p align="center">
-  یک <b>دانلود منیجر</b> سریع، سبک و متن‌باز برای ویندوز، با الهام از
-  <b>اینترنت دانلود منیجر (IDM)</b>: دانلود چندتکه، اتصال به مرورگر، دانلود ویدیو از یوتیوب
-  و سایت‌های دیگر، صف و زمان‌بند، با ظاهر شیشه‌ای ویندوز ۱۱.
+  <img src="docs/screenshots/windows/add-video.png" width="70%" alt="انتخاب کیفیت ویدیو در تاکیون">
 </p>
 
-<p align="center">
-  <a href="README.md">English</a> ·
-  <a href="#نصب">نصب</a> ·
-  <a href="#افزونهٔ-مرورگر">افزونهٔ مرورگر</a> ·
-  <a href="https://github.com/sponsors/thesaikodelik">یک قهوه مهمانم کنید</a>
-</p>
+- **یوتیوب و صدها سایت دیگر** از طریق [yt-dlp](https://github.com/yt-dlp/yt-dlp) که تاکیون خودش می‌گیرد و به‌روز نگه می‌دارد.
+- تصویر و صدا را خود تاکیون در **یک فایل MP4** یکی می‌کند؛ نیازی به ffmpeg نیست.
+- اگر سایتی تغییر کند، تاکیون خودکار ابزارش را به‌روز می‌کند و راه‌های دیگر را امتحان می‌کند.
+- یا کافی است **نشانی صفحهٔ ویدیو را روی تاکیون بیندازید**.
 
-<p align="center"><img src="docs/screenshots/windows/main.png" alt="پنجرهٔ اصلی تاکیون با دانلودهای در حال انجام"></p>
+## 🧩 هماهنگ با مرورگر شما
 
-تاکیون را [sonatina-dream](https://github.com/sonatina-dream/Tachyon-Download-Manager) برای مک ساخته است.
-این **نسخهٔ ویندوز** آن است، ساختهٔ [thesaikodelik](https://github.com/thesaikodelik): همان موتور دانلود،
-آورده‌شده به ویندوز، با ظاهر ویندوز ۱۱ و قابلیت‌های فراوان تازه.
+<img src="docs/screenshots/windows/links.png" align="left" width="52%" alt="دانلود همهٔ لینک‌های یک صفحه">
 
-| | |
-| --- | --- |
-| ![پنجرهٔ پیشرفت](docs/screenshots/windows/progress.png) | ![انتخاب کیفیت ویدیو](docs/screenshots/windows/add-video.png) |
-| **پنجرهٔ پیشرفت**: همهٔ اتصال‌ها و نقشهٔ زندهٔ تکه‌ها | **دانلود ویدیو**: کیفیت را انتخاب کنید؛ تصویر و صدا خودکار یکی می‌شوند |
-| ![دانلود همهٔ لینک‌ها](docs/screenshots/windows/links.png) | ![تنظیمات](docs/screenshots/windows/options.png) |
-| **دانلود همهٔ لینک‌های یک صفحه** با فیلتر نوع فایل | **تنظیمات** به سبک تنظیمات ویندوز ۱۱ |
-
-## قابلیت‌ها
-
-**دانلود**
-
-- **تکه‌تکه کردن پویا**، مثل IDM: دانلود با یک اتصال شروع می‌شود و هر اتصال آزاد نیمی از بزرگ‌ترین تکهٔ
-  باقی‌مانده را برمی‌دارد؛ تا ۳۲ اتصال (پیش‌فرض ۸).
-- **ادامهٔ دانلود** بعد از توقف، قطع برق یا خاموش شدن؛ فقط بایت‌های باقی‌مانده دانلود می‌شوند.
-- **محدودیت سرعت** برای هر دانلود یا کل دانلودها، **سهمیهٔ حجم**، **صف** و **زمان‌بند** که می‌تواند در پایان
-  کامپیوتر را خاموش کند.
-- **دسته‌بندی خودکار** (فشرده، اسناد، موسیقی، برنامه‌ها، ویدیو) هر کدام با پوشهٔ خودش، ورود به سایت‌ها
-  (رمزها با رمزنگاری خود ویندوز نگه داشته می‌شوند)، پراکسی و پایش کلیپ‌بورد.
-
-**ویدیو**
-
-- یک **دکمهٔ کوچک دانلود** کنار گوشهٔ ویدیوهای صفحه ظاهر می‌شود و پنجرهٔ تاکیون را با **کیفیت‌های** ویدیو
-  (تا 4K) و حجمشان باز می‌کند.
-- **یوتیوب و صدها سایت دیگر** از طریق [yt-dlp](https://github.com/yt-dlp/yt-dlp). تاکیون ابزارهای لازم را
-  خودش می‌گیرد و به‌روز نگه می‌دارد و تصویر و صدا را با یکی‌کنندهٔ خودش یکی می‌کند؛ نیازی به ffmpeg نیست.
-- اگر روشی جواب ندهد، تاکیون خودکار راه‌های دیگر را امتحان می‌کند.
-- نشانی صفحهٔ ویدیو را روی پنجرهٔ تاکیون بیندازید یا بچسبانید؛ باز هم کیفیت‌ها را نشان می‌دهد.
-
-**مرورگر** (کروم، اج، بریو، اپرا، ویوالدی و فایرفاکس)
-
-- دانلود نوع فایل‌هایی که خودتان انتخاب می‌کنید را از مرورگرهایی که تیک می‌زنید می‌گیرد.
-- منوهای «Download with Tachyon» روی لینک‌ها و «Download all links» روی صفحه.
+- **دانلودها را از مرورگر می‌گیرد**: نوع فایل‌ها و مرورگرها را خودتان انتخاب می‌کنید.
+- **دانلود همهٔ لینک‌های صفحه** یا فقط بخش انتخاب‌شده، با فیلتر نوع فایل.
 - با نگه داشتن **Alt** هنگام کلیک، دانلود در خود مرورگر می‌ماند.
-- اگر تاکیون بسته باشد خودش بازش می‌کند و پنجره‌اش را جلوی مرورگر می‌آورد.
+- اگر تاکیون بسته باشد، افزونه **خودش بازش می‌کند**.
+- **لینک‌ها را روی پنجرهٔ تاکیون بیندازید**.
 
-**ویندوز**
+<br clear="left">
 
-- **تم‌ها**: Liquid Glass (پیش‌فرض)، Liquid Glass Smoke، Solid و Classic؛ روشن، تیره یا هماهنگ با ویندوز.
-- **نصب‌کننده و حذف‌کنندهٔ اختصاصی**، بدون نیاز به دسترسی مدیر.
-- فایل تمام‌شده را از پنجرهٔ «Download complete» به هر پوشه‌ای بکشید.
+## 🎨 به سلیقهٔ خودتان
 
-<details>
-<summary><b>عکس‌های بیشتر: تم‌ها، نصب‌کننده و پنجره‌ها</b></summary>
+<img src="docs/screenshots/windows/themes.png" alt="تاکیون در چهار تم">
 
-| Liquid Glass Smoke | Solid | Classic |
-| --- | --- | --- |
-| ![Smoke](docs/screenshots/windows/theme-smoke.png) | ![Solid](docs/screenshots/windows/theme-solid.png) | ![Classic](docs/screenshots/windows/theme-classic.png) |
+چهار تم: **Liquid Glass** (جلو)، **Liquid Glass Smoke**، **Solid** و **Classic**؛ روشن، تیره یا هماهنگ با ویندوز.
 
-| نصب‌کننده | پایان دانلود | دربارهٔ برنامه |
-| --- | --- | --- |
-| ![نصب‌کننده](docs/screenshots/windows/setup.png) | ![پایان دانلود](docs/screenshots/windows/complete.png) | ![درباره](docs/screenshots/windows/about.png) |
+</div>
 
-</details>
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/windows/options.png" alt="تنظیمات"></td>
+    <td width="50%"><img src="docs/screenshots/windows/complete.png" alt="پایان دانلود"><br><br><img src="docs/screenshots/windows/about.png" width="60%" alt="دربارهٔ برنامه"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>تنظیمات به سبک تنظیمات ویندوز ۱۱</sub></td>
+    <td align="center"><sub>فایل تمام‌شده را مستقیم به هر پوشه‌ای بکشید</sub></td>
+  </tr>
+</table>
 
-## نصب
+<div dir="rtl">
+
+## 📦 نصب
+
+<img src="docs/screenshots/windows/setup.png" align="left" width="44%" alt="نصب‌کنندهٔ تاکیون">
 
 ۱. فایل **TachyonSetup.exe** را از صفحهٔ [Releases](https://github.com/thesaikodelik/Tachyon-Download-Manager/releases) دانلود کنید.<br>
-۲. اجرایش کنید. فقط برای حساب کاربری شما نصب می‌شود و دسترسی مدیر نمی‌خواهد.<br>
-۳. [افزونهٔ مرورگر](#افزونهٔ-مرورگر) را اضافه کنید.
+۲. اجرایش کنید. فقط برای حساب کاربری شما نصب می‌شود و **دسترسی مدیر نمی‌خواهد**.<br>
+۳. [افزونهٔ مرورگر](#-افزونهٔ-مرورگر) را اضافه کنید.
 
-> ممکن است ویندوز برای برنامهٔ تازه‌ای که هنوز زیاد دانلود نشده پیام «Windows protected your PC» نشان دهد:
-> روی **More info** و بعد **Run anyway** بزنید. تاکیون متن‌باز است و همهٔ کدش در دسترس است.
+> ممکن است ویندوز برای برنامهٔ تازه پیام «Windows protected your PC» نشان دهد: روی **More info** و بعد
+> **Run anyway** بزنید. تاکیون متن‌باز است و همهٔ کدش در دسترس است.
 
-حذف برنامه از **تنظیمات ویندوز ← Apps ← Installed apps**. فهرست دانلودها و تنظیمات شما مگر به انتخاب خودتان
-پاک نمی‌شود و به فایل‌های دانلودشده هیچ‌وقت دست زده نمی‌شود.
+حذف برنامه از **تنظیمات ویندوز ← Apps**. به فایل‌های دانلودشده هیچ‌وقت دست زده نمی‌شود.
 
-## افزونهٔ مرورگر
+<br clear="left">
 
-- **کروم، بریو، اپرا، ویوالدی و مرورگرهای مشابه**: فایل `tachyon-extension.zip` را از
-  [Releases](https://github.com/thesaikodelik/Tachyon-Download-Manager/releases) بگیرید و باز کنید (یا پوشهٔ
-  `extension` در محل نصب تاکیون را؛ دکمهٔ *Options ← Browser ← Show Extension Folder* بازش می‌کند).
-  به `chrome://extensions` بروید، **Developer mode** را روشن کنید، **Load unpacked** را بزنید و پوشه را انتخاب کنید.
-- **اج** و **فایرفاکس**: به‌زودی از فروشگاه افزونه‌هایشان. تا آن موقع اج همان پوشه را مثل کروم می‌پذیرد.
+## 🧩 افزونهٔ مرورگر
 
-بعد از نصب، در *Options ← Browser* کنار نام مرورگر یک نقطهٔ سبز می‌بینید.
+| مرورگر | روش نصب |
+| --- | --- |
+| **کروم، بریو، اپرا، ویوالدی** و مرورگرهای مشابه | فایل `tachyon-extension.zip` را از [Releases](https://github.com/thesaikodelik/Tachyon-Download-Manager/releases) بگیرید و باز کنید، یا پوشهٔ `extension` در محل نصب را (*Options ← Browser ← Show Extension Folder*). به `chrome://extensions` بروید، **Developer mode** را روشن کنید، **Load unpacked** را بزنید و پوشه را انتخاب کنید. |
+| **اج** | از فروشگاه افزونه‌های اج (به‌زودی). تا آن موقع همان پوشه را در `edge://extensions` بارگذاری کنید. |
+| **فایرفاکس** | از فروشگاه افزونه‌های فایرفاکس (به‌زودی). |
 
-## ساخت از کد
+نقطهٔ سبز کنار نام مرورگر در *Options ← Browser* یعنی وصل شده است.
 
-راست (Rust) پایدار با ابزارهای MSVC و Visual Studio Build Tools لازم است:
+## ❤️ سازندگان و حمایت
 
-```powershell
-winget install Rustlang.Rustup
-cargo build --release -p tachyon
-cargo test --workspace
-```
+تاکیون را **[sonatina-dream](https://github.com/sonatina-dream/Tachyon-Download-Manager)** برای مک ساخت، از جمله موتور دانلودش.
+نسخهٔ ویندوز ساختهٔ **[thesaikodelik](https://github.com/thesaikodelik)** است.
 
-## توجه
+اگر به کارتان آمد، می‌توانید **[یک قهوه مهمانم کنید](https://github.com/sponsors/thesaikodelik)** ☕. کاملاً اختیاری است و تاکیون رایگان می‌ماند.
 
-فقط چیزی را دانلود کنید که حقش را دارید. بسیاری از سایت‌ها، از جمله یوتیوب، دانلود را فقط برای محتوای خود شما
-یا محتوایی که برای دانلود ارائه شده مجاز می‌دانند؛ رعایت قوانینشان با خود شماست.
+> **توجه:** فقط چیزی را دانلود کنید که حقش را دارید. بسیاری از سایت‌ها، از جمله یوتیوب، دانلود را فقط برای محتوای
+> خود شما یا محتوایی که برای دانلود ارائه شده مجاز می‌دانند.
 
-## سازندگان و حمایت
-
-- **[sonatina-dream](https://github.com/sonatina-dream/Tachyon-Download-Manager)** تاکیون را برای مک ساخت، از جمله موتور دانلودش.
-- **[thesaikodelik](https://github.com/thesaikodelik)** نسخهٔ ویندوز را ساخت.
-
-اگر نسخهٔ ویندوز به کارتان آمد، می‌توانید [یک قهوه مهمانم کنید](https://github.com/sponsors/thesaikodelik). اختیاری است و همه‌چیز رایگان می‌ماند.
-
-## مجوز
-
-[MIT](LICENSE). تاکیون مستقل است و هیچ ارتباطی با شرکت Tonec یا اینترنت دانلود منیجر ندارد.
+<sub>[مجوز MIT](LICENSE). تاکیون مستقل است و هیچ ارتباطی با شرکت Tonec یا اینترنت دانلود منیجر ندارد. برای ساخت از کد و جزئیات فنی، <a href="README.md#-credits-and-support">نسخهٔ انگلیسی</a> را ببینید.</sub>
 
 </div>
