@@ -226,9 +226,10 @@ impl Theme {
             hover: ink(if dark { 0x14 } else { 0x0d }),
             pressed: ink(if dark { 0x0a } else { 0x08 }),
             row_alt: ca(CLEAR),
-            success: c(if dark { 0x6ccb5f } else { 0x0f7b0f }),
-            danger: c(if dark { 0xff99a4 } else { 0xc42b1c }),
-            warning: c(if dark { 0xfce100 } else { 0x9d5d00 }),
+            // Vivid on Smoke: pastel shades wash out over whatever shows through the glass.
+            success: c(if dark { 0x4ade80 } else { 0x0f7b0f }),
+            danger: c(if dark { 0xff5c6c } else { 0xc42b1c }),
+            warning: c(if dark { 0xffc83d } else { 0x9d5d00 }),
             track: ink(if dark { 0x26 } else { 0x1a }),
             // Boxes: a faint light film on Smoke; on light Liquid Glass, white glass.
             button: if dark { ink(0x1a) } else { ca(0xffffff80) },
