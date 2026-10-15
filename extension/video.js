@@ -83,6 +83,8 @@
         pointer-events: auto;
       }
       .btn.shown { opacity: 0.88; transform: none; }
+      /* While faded out it must not catch clicks meant for the page. */
+      .btn:not(.shown) { pointer-events: none; }
       .btn.open { opacity: 1; max-width: 280px; }
       .btn svg { flex: none; width: 15px; height: 15px; }
       .label { padding: 0 4px 0 6px; }
@@ -147,12 +149,30 @@
     return null;
   }
 
+  const BUTTON_HEIGHT = 28;
+  const EDGE_GAP = 4;
+
+  // Just outside the video's top-right corner, as IDM does, so it never covers a
+  // site's own logo or buttons there; below the video, or inside it as a last
+  // resort, when there's no room above.
   function place() {
     if (!video) return;
     const r = video.getBoundingClientRect();
-    wrap.style.top = `${Math.max(r.top, 0) + 10}px`;
-    wrap.style.right = `${Math.max(window.innerWidth - r.right, 0) + 10}px`;
+    let top;
+    if (r.top - BUTTON_HEIGHT - EDGE_GAP >= 0) {
+      top = r.top - BUTTON_HEIGHT - EDGE_GAP;
+    } else if (r.bottom + EDGE_GAP + BUTTON_HEIGHT <= window.innerHeight) {
+      top = r.bottom + EDGE_GAP;
+    } else {
+      top = Math.max(r.top, 0) + 10;
+    }
+    wrap.style.top = `${top}px`;
+    wrap.style.right = `${Math.max(window.innerWidth - r.right, 0)}px`;
   }
+
+  // Leaving the video on the way to the button (which sits outside it) mustn't hide it.
+  const REACH_MS = 450;
+  let reachTimer = 0;
 
   function show(v) {
     if (video !== v) {
@@ -182,8 +202,16 @@
       if (!enabled || hiddenHere || document.fullscreenElement) return;
       if (overUi) return;
       const v = videoAt(e.clientX, e.clientY);
-      if (v) show(v);
-      else if (video) hide();
+      if (v) {
+        clearTimeout(reachTimer);
+        reachTimer = 0;
+        show(v);
+      } else if (video && !reachTimer) {
+        reachTimer = setTimeout(() => {
+          reachTimer = 0;
+          if (!overUi) hide();
+        }, REACH_MS);
+      }
     },
     { passive: true, capture: true },
   );
