@@ -14,6 +14,7 @@ mod file_icons;
 mod format;
 mod main_window;
 mod message_dialog;
+mod native_host;
 mod options_window;
 mod platform;
 mod post_action;
@@ -52,6 +53,12 @@ actions!(
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
+    // Started by a browser so its extension can open Tachyon: do that and leave.
+    if native_host::is_host_launch() {
+        native_host::serve();
+        return;
+    }
+
     // TACHYON_DATA_DIR keeps development runs away from the real download list.
     let data_dir = std::env::var_os("TACHYON_DATA_DIR").map(std::path::PathBuf::from).or_else(Engine::default_data_dir);
     // A second launch shows the running Tachyon instead of starting another engine
@@ -73,6 +80,10 @@ fn main() {
             std::process::exit(1);
         }
     };
+    // Development runs leave the browsers pointing at the installed Tachyon.
+    if std::env::var_os("TACHYON_DATA_DIR").is_none() {
+        native_host::register(engine.data_dir());
+    }
 
     let app = Application::new().with_assets(assets::Assets);
     app.on_reopen(app::open_main_window);

@@ -4,13 +4,15 @@
   "short_name": "Tachyon",
   "version": "0.1.0",
   "description": "Send links and browser downloads to the Tachyon download manager.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4By6k/9XtVcTsV+Hog70D+U1ghfYvozJEpy/VbZw4GEpeDqt/85Fol9UNF42pW1Pk6xUCk8IHEXrVjxzONlZjH/4XUYl0DS3xJOVZ+4bjF8iwOvuDEHEnChTZ96XOFgIu19V8ZpSD58/0Z1ULzbtqJ+LQujyYyGD2FO9lEwXOwWcNKuuF68QOyP7h2pRlKXJYGwucfs13CuUvUfftRFgwR7kRnYviLB2BFaXfytnKzh9h7r3lD5Zmq888XSmBhJSLhdfdTHTc3LeTBpL25hStaFrq+SZ/b1ccmdlcERnU1sBjf0izaoQjV0qj6yyzYSxUlVYwDulMbCn6JUwQtJQZwIDAQAB",
   "permissions": [
     "contextMenus",
     "downloads",
     "cookies",
     "storage",
     "alarms",
-    "webRequest"
+    "webRequest",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "<all_urls>"

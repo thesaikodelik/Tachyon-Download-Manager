@@ -32,10 +32,43 @@ async function fetchConfig() {
       signal: AbortSignal.timeout(1500),
     });
     if (!response.ok) return null;
-    return await response.json();
+    const config = await response.json();
+    // Remembered, to know which downloads are worth starting Tachyon for.
+    chrome.storage.local.set({ lastConfig: config });
+    return config;
   } catch {
     return null;
   }
+}
+
+// ---- Starting Tachyon when it isn't running ----
+// Tachyon registers itself with the browser as a "native messaging" host that only
+// this extension may call; calling it starts Tachyon in the notification area.
+
+const NATIVE_HOST = "com.thesaikodelik.tachyon";
+const START_WAIT_MS = 12000;
+let starting = null;
+
+/** Resolves to true once Tachyon answers, starting it first if needed. */
+function ensureRunning() {
+  starting ||= (async () => {
+    if (await fetchConfig()) return true;
+    try {
+      await chrome.runtime.sendNativeMessage(NATIVE_HOST, { launch: true });
+    } catch {
+      // Not registered yet: Tachyon has never run on this computer.
+      return false;
+    }
+    const until = Date.now() + START_WAIT_MS;
+    while (Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 300));
+      if (await fetchConfig()) return true;
+    }
+    return false;
+  })().finally(() => {
+    starting = null;
+  });
+  return starting;
 }
 
 async function cookieHeader(url) {
@@ -47,8 +80,15 @@ async function cookieHeader(url) {
   }
 }
 
-/** Sends one download to Tachyon; resolves to true if the app accepted it. */
-async function sendToTachyon({ url, referrer, filename, mediaFormat, size }) {
+/** Sends one download to Tachyon, starting it if needed; true if it was accepted. */
+async function sendToTachyon(download) {
+  const sent = await postDownload(download);
+  if (sent !== null) return sent;
+  return (await ensureRunning()) && (await postDownload(download)) === true;
+}
+
+/** true or false for Tachyon's answer; null when it isn't running. */
+async function postDownload({ url, referrer, filename, mediaFormat, size }) {
   if (!/^https?:/i.test(url)) return false;
   const { port } = await settings();
   const body = {
@@ -69,12 +109,19 @@ async function sendToTachyon({ url, referrer, filename, mediaFormat, size }) {
     });
     return response.ok;
   } catch {
-    return false;
+    return null;
   }
 }
 
-/** Asks Tachyon (through yt-dlp) which qualities a video page offers. */
+/** Asks Tachyon (through yt-dlp) which qualities a video page offers, starting it
+ *  if needed. */
 async function mediaFormats(url) {
+  const result = await askFormats(url);
+  if (!result.offline || !(await ensureRunning())) return result;
+  return askFormats(url);
+}
+
+async function askFormats(url) {
   const { port } = await settings();
   try {
     const response = await fetch(endpoint(port, "/v1/media/formats"), {
@@ -162,7 +209,15 @@ chrome.downloads.onCreated.addListener(async (item) => {
   if (passThrough.delete(url)) return;
   const { takeOver } = await settings();
   if (!takeOver) return;
-  const config = await fetchConfig();
+  let config = await fetchConfig();
+  if (!config) {
+    // Tachyon isn't running: start it for the kinds of file it last took over.
+    const { lastConfig } = await chrome.storage.local.get("lastConfig");
+    const wanted = lastConfig?.capture && new Set(lastConfig.extensions).has(extensionOf(item));
+    if (wanted && !isExcluded(url, lastConfig.excludedSites) && (await ensureRunning())) {
+      config = await fetchConfig();
+    }
+  }
   if (!config?.capture) return;
   if (!new Set(config.extensions).has(extensionOf(item))) return;
   if (isExcluded(url, config.excludedSites)) return;
