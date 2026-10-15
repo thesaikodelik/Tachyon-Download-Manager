@@ -174,11 +174,19 @@
   const REACH_MS = 450;
   let reachTimer = 0;
 
+  /** Starts reading the page's qualities while the pointer is still on its way to
+   *  the button, for videos that aren't a plain file. */
+  function readAhead(v) {
+    const src = v?.currentSrc || v?.src || "";
+    if (!/^https?:/i.test(src)) pageQualities(true);
+  }
+
   function show(v) {
     if (video !== v) {
       video = v;
       closeMenu();
       collapse();
+      readAhead(v);
     }
     place();
     button.classList.add("shown");
@@ -266,10 +274,14 @@
   // Qualities Tachyon (through yt-dlp) found for each page, so it reads a page once.
   const qualities = new Map();
 
-  function pageQualities() {
+  /** The page's qualities. `early` asks ahead of a click, only if Tachyon already
+   *  runs: opening a page never starts it. */
+  function pageQualities(early = false) {
     const page = location.href;
     if (!qualities.has(page)) {
-      const asked = chrome.runtime.sendMessage({ type: "media-formats", url: page }).catch(() => ({ offline: true }));
+      const asked = chrome.runtime
+        .sendMessage({ type: "media-formats", url: page, early })
+        .catch(() => ({ offline: true }));
       qualities.set(page, asked);
       // Ask again next time unless it worked.
       asked.then((r) => {
@@ -420,4 +432,14 @@
       },
     ]);
   });
+
+  // YouTube changes pages without reloading: read each video page's qualities as
+  // it opens, so the menu is ready before the pointer is.
+  if (/(^|\.)youtube\.com$/.test(site)) {
+    const early = () => {
+      if (/^\/(watch|shorts\/)/.test(location.pathname)) setTimeout(() => pageQualities(true), 800);
+    };
+    window.addEventListener("yt-navigate-finish", early);
+    early();
+  }
 })();

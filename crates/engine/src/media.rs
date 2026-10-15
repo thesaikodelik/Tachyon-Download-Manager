@@ -271,22 +271,87 @@ pub(crate) async fn list(
     client: &Client,
     tools_dir: &Path,
 ) -> Result<MediaInfo, String> {
+    let started = std::time::Instant::now();
     let (yt_dlp, js) = ready_tools(client, settings, tools_dir).await.map_err(|e| format!("couldn't get yt-dlp: {e}"))?;
+    let tools_ready = started.elapsed();
     let mut cmd = command(&yt_dlp, settings, js.as_deref());
     let jar = CookieFile::write(tools_dir, cookies);
     if let Some(jar) = &jar {
         jar.add_to(&mut cmd);
     }
     cmd.arg("-J").arg("--").arg(url);
-    let output = tokio::time::timeout(LIST_TIMEOUT, cmd.output())
-        .await
-        .map_err(|_| "the site took too long to answer".to_string())?
-        .map_err(|e| e.to_string())?;
+    let output = tokio::time::timeout(LIST_TIMEOUT, cmd.output()).await;
+    note_timing(tools_dir, url, cookies.len(), tools_ready, started.elapsed(), &output);
+    let output = output.map_err(|_| "the site took too long to answer".to_string())?.map_err(|e| e.to_string())?;
     if !output.status.success() {
         return Err(last_error(&String::from_utf8_lossy(&output.stderr)));
     }
     let json: Value = serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
+    save_page(tools_dir, url, &output.stdout);
     Ok(choices(&json, find(tools_dir, FFMPEG).is_some()))
+}
+
+/// Notes how long reading a page took, to find what makes the quality menu slow.
+/// One line per read in logs\video-timing.log, which keeps its last 200 lines.
+fn note_timing(
+    tools_dir: &Path,
+    url: &str,
+    cookies: usize,
+    tools_ready: Duration,
+    total: Duration,
+    output: &Result<std::io::Result<std::process::Output>, tokio::time::error::Elapsed>,
+) {
+    let Some(dir) = tools_dir.parent().map(|d| d.join("logs")) else { return };
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("video-timing.log");
+    let result = match output {
+        Ok(Ok(out)) if out.status.success() => "ok".to_string(),
+        Ok(Ok(out)) => format!("failed: {}", last_error(&String::from_utf8_lossy(&out.stderr))),
+        Ok(Err(e)) => format!("failed: {e}"),
+        Err(_) => "timed out".to_string(),
+    };
+    let line = format!(
+        "{} tools {:.1}s, total {:.1}s, {cookies} cookies, {result}, {url}",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        tools_ready.as_secs_f32(),
+        total.as_secs_f32(),
+    );
+    log::info!("video page read: {line}");
+    let mut lines: Vec<String> = std::fs::read_to_string(&path).unwrap_or_default().lines().map(str::to_string).collect();
+    lines.push(line);
+    let keep = lines.len().saturating_sub(200);
+    let _ = std::fs::write(&path, lines[keep..].join("\n") + "\n");
+}
+
+/// What yt-dlp read from a page stays usable this long: the download then starts
+/// from it instead of reading the page again. Sites' links last hours; this is well
+/// inside that.
+const PAGE_FRESH: Duration = Duration::from_secs(30 * 60);
+
+fn saved_page_path(tools_dir: &Path, url: &str) -> PathBuf {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    url.hash(&mut hasher);
+    tools_dir.join("pages").join(format!("{:016x}.json", hasher.finish()))
+}
+
+/// Keeps what yt-dlp read from `url`, and drops pages read long ago.
+fn save_page(tools_dir: &Path, url: &str, json: &[u8]) {
+    let path = saved_page_path(tools_dir, url);
+    let Some(dir) = path.parent() else { return };
+    let _ = std::fs::create_dir_all(dir);
+    for old in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        if age(&old.path()).is_some_and(|a| a > PAGE_FRESH * 4) {
+            let _ = std::fs::remove_file(old.path());
+        }
+    }
+    let _ = std::fs::write(path, json);
+}
+
+/// The page as yt-dlp read it moments ago, if it's still fresh.
+fn saved_page(tools_dir: &Path, url: &str) -> Option<PathBuf> {
+    let path = saved_page_path(tools_dir, url);
+    age(&path).is_some_and(|a| a < PAGE_FRESH).then_some(path)
 }
 
 /// A format's size, or an estimate from its bitrate (kbit/s) and the duration.
@@ -565,7 +630,10 @@ pub(crate) async fn run(input: TaskInput, shared: Arc<TaskShared>, env: TaskEnv)
     let mut step = 0;
     while step < ladder.len() {
         let format = &ladder[step];
-        match attempt(&input, &shared, &env, &yt_dlp, js.as_deref(), &media, format).await {
+        // The first try starts from the page as read for the quality menu; any retry
+        // reads it afresh, in case that went stale.
+        let saved = if failures.is_empty() { saved_page(&env.tools_dir, &input.spec.url) } else { None };
+        match attempt(&input, &shared, &env, &yt_dlp, js.as_deref(), &media, format, saved.as_deref()).await {
             Ok(outcome) => {
                 if !failures.is_empty() {
                     log::info!("video {} downloaded on try {} ({format})", input.id, failures.len() + 1);
@@ -610,6 +678,7 @@ fn write_report(tools_dir: &Path, input: &TaskInput, failures: &[(String, String
 
 /// One try at a video page in `format`. Ok with the outcome (finished or stopped),
 /// or Err with what went wrong.
+#[allow(clippy::too_many_arguments)]
 async fn attempt(
     input: &TaskInput,
     shared: &TaskShared,
@@ -618,6 +687,7 @@ async fn attempt(
     js: Option<&Path>,
     media: &crate::types::MediaSpec,
     format: &str,
+    saved_page: Option<&Path>,
 ) -> Result<TaskOutcome, String> {
     let target = input.directory.join(&input.file_name);
     // "picture,sound": yt-dlp fetches both and Tachyon joins them.
@@ -655,7 +725,10 @@ async fn attempt(
     } else {
         cmd.arg(&target);
     }
-    cmd.arg("--").arg(&input.spec.url);
+    match saved_page {
+        Some(page) => cmd.arg("--load-info-json").arg(page),
+        None => cmd.arg("--").arg(&input.spec.url),
+    };
 
     let mut child = cmd.spawn().map_err(|e| format!("could not run yt-dlp: {e}"))?;
     let stdout = child.stdout.take().expect("piped");

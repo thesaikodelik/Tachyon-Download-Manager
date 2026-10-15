@@ -326,7 +326,8 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     return true;
   }
   if (message?.type === "media-formats") {
-    mediaFormats(message.url).then(reply);
+    // Asked ahead of a click: only if Tachyon already runs.
+    (message.early ? askFormats(message.url) : mediaFormats(message.url)).then(reply);
     return true;
   }
   if (message?.type === "status") {
