@@ -48,6 +48,7 @@
         "https://*/*"
       ],
       "js": [
+        "page.js",
         "video.js"
       ],
       "all_frames": true,

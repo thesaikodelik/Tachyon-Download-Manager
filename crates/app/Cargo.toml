@@ -43,6 +43,8 @@ windows-sys = { version = "0.59", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 tray-icon = "0.26"
+# For implementing COM interfaces (the link drop target).
+windows-core = "0.61"
 
 # The COM-based shell APIs (drag and drop) are far simpler through `windows`, which
 # GPUI already depends on.
@@ -54,6 +56,7 @@ windows = { version = "0.61", features = [
     "Win32_System_DataExchange",
     "Win32_System_Memory",
     "Win32_System_Ole",
+    "Win32_System_SystemServices",
     "Win32_UI_Controls",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",

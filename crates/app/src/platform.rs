@@ -151,6 +151,30 @@ pub fn refuse_file_drops(window: &Window) {
     imp::refuse_file_drops(window)
 }
 
+/// Lets links be dropped on `window` (from a browser's address bar or a page), as
+/// on IDM's main window. Each dropped web address is collected for
+/// [`take_dropped_links`].
+pub fn accept_dropped_links(window: &Window) {
+    imp::accept_dropped_links(window)
+}
+
+/// Web addresses dropped on Tachyon since the last call.
+pub fn take_dropped_links() -> Vec<String> {
+    std::mem::take(&mut *DROPPED_LINKS.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+static DROPPED_LINKS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// The web addresses in dropped text: one per line, http(s) only.
+fn links_in(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("http://") || l.starts_with("https://"))
+        .filter(|l| url::Url::parse(l).is_ok())
+        .map(str::to_string)
+        .collect()
+}
+
 /// Puts a window in front of every other app and gives it the keyboard, even while
 /// another app (such as the browser that sent a download) is in front.
 pub fn bring_to_front(window: &Window) {
@@ -626,6 +650,118 @@ mod imp {
         }
     }
 
+    /// Tachyon's own drop target: takes links, as text or as an Internet shortcut,
+    /// and reads the shell's data properly (GPUI's handler crashes on it).
+    #[windows::core::implement(windows::Win32::System::Ole::IDropTarget)]
+    struct LinkDropTarget;
+
+    /// The links in `data`, from the formats browsers and Explorer use for them.
+    fn links_from(data: &windows::Win32::System::Com::IDataObject) -> Vec<String> {
+        use windows::Win32::Foundation::HGLOBAL;
+        use windows::Win32::System::Com::{DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL};
+        use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
+        use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+        use windows::Win32::System::Ole::{CF_UNICODETEXT, ReleaseStgMedium};
+        use windows::core::w;
+
+        // SAFETY: the medium's memory is locked while read and released afterwards.
+        unsafe {
+            let url_format = RegisterClipboardFormatW(w!("UniformResourceLocatorW")) as u16;
+            for format in [url_format, CF_UNICODETEXT.0] {
+                let etc = FORMATETC {
+                    cfFormat: format,
+                    ptd: std::ptr::null_mut(),
+                    dwAspect: DVASPECT_CONTENT.0,
+                    lindex: -1,
+                    tymed: TYMED_HGLOBAL.0 as u32,
+                };
+                let Ok(mut medium) = data.GetData(&etc) else { continue };
+                let global: HGLOBAL = medium.u.hGlobal;
+                let pointer = GlobalLock(global).cast::<u16>();
+                let mut text = String::new();
+                if !pointer.is_null() {
+                    let units = GlobalSize(global) / 2;
+                    let slice = std::slice::from_raw_parts(pointer, units);
+                    let end = slice.iter().position(|&u| u == 0).unwrap_or(units);
+                    text = String::from_utf16_lossy(&slice[..end]);
+                    let _ = GlobalUnlock(global);
+                }
+                ReleaseStgMedium(&mut medium);
+                let links = super::links_in(&text);
+                if !links.is_empty() {
+                    return links;
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    impl windows::Win32::System::Ole::IDropTarget_Impl for LinkDropTarget_Impl {
+        fn DragEnter(
+            &self,
+            data: windows::core::Ref<windows::Win32::System::Com::IDataObject>,
+            _keys: windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS,
+            _point: &windows::Win32::Foundation::POINTL,
+            effect: *mut windows::Win32::System::Ole::DROPEFFECT,
+        ) -> windows::core::Result<()> {
+            use windows::Win32::System::Ole::{DROPEFFECT_LINK, DROPEFFECT_NONE};
+            let wanted = data.ok().is_ok_and(|data| !links_from(data).is_empty());
+            // SAFETY: OLE passes a valid out-pointer.
+            unsafe { *effect = if wanted { DROPEFFECT_LINK } else { DROPEFFECT_NONE } };
+            DRAG_HAS_LINKS.store(wanted, std::sync::atomic::Ordering::Relaxed);
+            Ok(())
+        }
+
+        fn DragOver(
+            &self,
+            _keys: windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS,
+            _point: &windows::Win32::Foundation::POINTL,
+            effect: *mut windows::Win32::System::Ole::DROPEFFECT,
+        ) -> windows::core::Result<()> {
+            use windows::Win32::System::Ole::{DROPEFFECT_LINK, DROPEFFECT_NONE};
+            let wanted = DRAG_HAS_LINKS.load(std::sync::atomic::Ordering::Relaxed);
+            // SAFETY: OLE passes a valid out-pointer.
+            unsafe { *effect = if wanted { DROPEFFECT_LINK } else { DROPEFFECT_NONE } };
+            Ok(())
+        }
+
+        fn DragLeave(&self) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn Drop(
+            &self,
+            data: windows::core::Ref<windows::Win32::System::Com::IDataObject>,
+            _keys: windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS,
+            _point: &windows::Win32::Foundation::POINTL,
+            effect: *mut windows::Win32::System::Ole::DROPEFFECT,
+        ) -> windows::core::Result<()> {
+            use windows::Win32::System::Ole::{DROPEFFECT_LINK, DROPEFFECT_NONE};
+            let links = data.ok().map(links_from).unwrap_or_default();
+            // SAFETY: OLE passes a valid out-pointer.
+            unsafe { *effect = if links.is_empty() { DROPEFFECT_NONE } else { DROPEFFECT_LINK } };
+            super::DROPPED_LINKS.lock().unwrap_or_else(|e| e.into_inner()).extend(links);
+            Ok(())
+        }
+    }
+
+    static DRAG_HAS_LINKS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    pub fn accept_dropped_links(window: &Window) {
+        use windows::Win32::System::Ole::{IDropTarget, RegisterDragDrop, RevokeDragDrop};
+        let Some(hwnd) = hwnd(window) else { return };
+        let hwnd = windows::Win32::Foundation::HWND(hwnd as _);
+        let target: IDropTarget = LinkDropTarget.into();
+        // SAFETY: OLE is initialised on this (GPUI's UI) thread; OLE keeps the target
+        // alive until the window is destroyed or the target revoked.
+        unsafe {
+            let _ = RevokeDragDrop(hwnd);
+            if let Err(e) = RegisterDragDrop(hwnd, &target) {
+                log::warn!("could not accept dropped links: {e}");
+            }
+        }
+    }
+
     pub fn refuse_file_drops(window: &Window) {
         if let Some(hwnd) = hwnd(window) {
             // SAFETY: undoes GPUI's RegisterDragDrop on a live window.
@@ -752,6 +888,8 @@ mod imp {
     pub fn bring_to_front(_: &Window) {}
 
     pub fn refuse_file_drops(_: &Window) {}
+
+    pub fn accept_dropped_links(_: &Window) {}
 
     pub fn cloak(_: &Window, _: bool) {}
 }

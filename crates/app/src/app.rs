@@ -77,6 +77,11 @@ fn tick(cx: &mut App) {
         // Tachyon was launched again: show this instance instead.
         open_main_window(cx);
     }
+    // Straight to the file's details, as for a link from the browser.
+    for link in crate::platform::take_dropped_links() {
+        let request = tachyon_engine::AddRequest { request: tachyon_engine::RequestSpec::new(link), ..Default::default() };
+        open_add_dialog(AddPrefill::Captured(Box::new(request)), cx);
+    }
     let engine = engine(cx);
     for event in engine.drain_events() {
         match event {
@@ -284,6 +289,8 @@ pub fn open_main_window_with(show: bool, cx: &mut App) {
     let opened = open_styled(options, cx, |window, cx| {
         let hwnd = crate::platform::native_handle(window);
         cx.global_mut::<AppState>().main_hwnd = hwnd;
+        // Links dropped on the main window are added, as in IDM.
+        crate::platform::accept_dropped_links(window);
         // With a notification-area icon, closing the window only hides it, as in IDM.
         window.on_window_should_close(cx, |window, cx| {
             let keep_running = crate::tray::is_active() && engine(cx).settings().close_to_tray;

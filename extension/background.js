@@ -12,7 +12,8 @@ const DEFAULTS = {
 
 const MENU_ID = "tachyon-download";
 const CHECK_IN = "tachyon-check-in";
-// URLs we handed back to the browser after Tachyon refused or was unreachable.
+// URLs we handed back to the browser after Tachyon refused or was unreachable, or
+// that the user Alt-clicked to keep in the browser.
 const passThrough = new Set();
 
 async function settings() {
@@ -230,7 +231,7 @@ function extensionOf(item) {
 chrome.downloads.onCreated.addListener(async (item) => {
   const url = item.finalUrl || item.url;
   if (!/^https?:/i.test(url) || item.byExtensionId === chrome.runtime.id) return;
-  if (passThrough.delete(url)) return;
+  if (passThrough.delete(url) || passThrough.delete(item.url)) return;
   const { takeOver } = await settings();
   if (!takeOver) return;
   let config = await fetchConfig();
@@ -316,6 +317,13 @@ chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(`medi
 
 // Popup and video button API.
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
+  if (message?.type === "leave-to-browser") {
+    // An Alt-click: the browser's own download of this link stays the browser's.
+    passThrough.add(message.url);
+    setTimeout(() => passThrough.delete(message.url), 15000);
+    reply(true);
+    return false;
+  }
   if (message?.type === "media-list") {
     const key = `media:${sender.tab?.id}`;
     chrome.storage.session.get(key).then((s) => reply(s[key] || []));
