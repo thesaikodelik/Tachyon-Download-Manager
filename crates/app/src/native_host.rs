@@ -11,7 +11,7 @@ pub const HOST_NAME: &str = "com.thesaikodelik.tachyon";
 /// The extension's ID in Chromium browsers, fixed by the key in its manifest.
 const CHROMIUM_EXTENSION: &str = "chrome-extension://ifbhemdglfcmphdabagjlcljljcfglib/";
 /// The extension's ID in Firefox, from its manifest.
-const FIREFOX_EXTENSION: &str = "tachyon@localhost";
+const FIREFOX_EXTENSION: &str = "tachyon-download-manager@thesaikodelik";
 
 /// Where each browser looks for messaging hosts, under HKEY_CURRENT_USER.
 const CHROMIUM_KEYS: [&str; 5] = [
