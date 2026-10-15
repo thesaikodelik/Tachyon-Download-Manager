@@ -12,6 +12,8 @@ const ORIGINAL_AUTHOR: &str = "sonatina-dream";
 const ORIGINAL_URL: &str = "https://github.com/sonatina-dream/Tachyon-Download-Manager";
 const WINDOWS_AUTHOR: &str = "thesaikodelik";
 const WINDOWS_URL: &str = "https://github.com/thesaikodelik/Tachyon-Download-Manager";
+/// Support for the Windows edition; the original author's work is credited above it.
+const SPONSOR_URL: &str = "https://github.com/sponsors/thesaikodelik";
 const WORD: &str = "Tachyon";
 
 const BOLT_SIZE: f32 = 18.;
@@ -117,6 +119,27 @@ fn credit_row(id: &'static str, role: &'static str, name: &'static str, url: &'s
         .child(icon(Icon::External, px(13.), theme.muted))
 }
 
+/// A small, optional "Sponsor" link beside OK: support for the Windows edition.
+fn sponsor_link(theme: &Theme) -> impl IntoElement {
+    let heart: Hsla = gpui::rgb(0xe5484d).into();
+    let (muted, text) = (theme.muted, theme.text);
+    div()
+        .id("sponsor")
+        .flex()
+        .items_center()
+        .gap(px(5.))
+        .px(px(6.))
+        .py(px(3.))
+        .rounded(px(theme.radius))
+        .cursor_pointer()
+        .text_size(px(12.))
+        .text_color(muted)
+        .hover(move |s| s.text_color(text))
+        .on_click(|_, _, cx| cx.open_url(SPONSOR_URL))
+        .child(icon(Icon::Heart, px(12.), heart))
+        .child("Sponsor")
+}
+
 impl Render for AboutDialog {
     fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(window);
@@ -158,14 +181,17 @@ impl Render for AboutDialog {
                             .child(credit_row("credit-original", "Created by (macOS)", ORIGINAL_AUTHOR, ORIGINAL_URL, &theme))
                             .child(credit_row("credit-windows", "Windows edition by", WINDOWS_AUTHOR, WINDOWS_URL, &theme)),
                     )
+
                     .child(
                         div()
                             .flex()
-                            .justify_end()
+                            .items_center()
+                            .justify_between()
                             .px(px(16.))
                             .py(px(12.))
                             .border_t_1()
                             .border_color(theme.border)
+                            .child(sponsor_link(&theme))
                             .child(Button::new("ok", "OK").primary().on_click(|_, window, _| window.remove_window())),
                     ),
             ))

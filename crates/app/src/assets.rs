@@ -13,7 +13,7 @@ macro_rules! icons {
 static ICONS: &[(&str, &[u8])] = icons![
     "add", "alert", "app", "archive", "arrow-down", "bolt", "calendar", "check-circle", "check",
     "chevron-down", "chevron-right", "chevron-up", "clock", "copy", "document", "external", "file",
-    "folder", "globe", "inbox", "info", "list", "music", "pause", "play",
+    "folder", "globe", "heart", "inbox", "info", "list", "music", "pause", "play",
     "queue-play", "queue-stop", "refresh", "sliders", "stop-all", "trash-check", "trash", "video",
     "x",
 ];
@@ -60,6 +60,7 @@ pub enum Icon {
     File,
     Folder,
     Globe,
+    Heart,
     Inbox,
     Info,
     List,
@@ -99,6 +100,7 @@ impl Icon {
             Self::File => "icons/file.svg",
             Self::Folder => "icons/folder.svg",
             Self::Globe => "icons/globe.svg",
+            Self::Heart => "icons/heart.svg",
             Self::Inbox => "icons/inbox.svg",
             Self::Info => "icons/info.svg",
             Self::List => "icons/list.svg",
@@ -140,7 +142,7 @@ mod tests {
             Icon::Add, Icon::Alert, Icon::App, Icon::Archive, Icon::ArrowDown, Icon::Bolt,
             Icon::Calendar, Icon::Check, Icon::CheckCircle, Icon::ChevronDown, Icon::ChevronRight,
             Icon::ChevronUp, Icon::Clock, Icon::Copy, Icon::Document, Icon::External, Icon::File,
-            Icon::Folder, Icon::Globe, Icon::Inbox, Icon::Info, Icon::List,
+            Icon::Folder, Icon::Globe, Icon::Heart, Icon::Inbox, Icon::Info, Icon::List,
             Icon::Music, Icon::Pause, Icon::Play, Icon::QueuePlay, Icon::QueueStop, Icon::Refresh,
             Icon::Sliders, Icon::StopAll, Icon::Trash, Icon::TrashCheck, Icon::Video, Icon::X,
         ];
