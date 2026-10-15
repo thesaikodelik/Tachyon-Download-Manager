@@ -235,7 +235,16 @@ impl AddDialog {
             }
         };
         let name = self.captured_name.clone().unwrap_or(name);
-        self.url_display.update(cx, |input, cx| input.set_text(spec.url.clone(), cx));
+        // Room for the Resumable / Can't resume badge at the end of the address.
+        let badge_space = match &result {
+            Ok(info) if info.resumable => px(104.),
+            Ok(_) => px(116.),
+            Err(_) => px(0.),
+        };
+        self.url_display.update(cx, |input, cx| {
+            input.set_text(spec.url.clone(), cx);
+            input.set_trailing_space(badge_space, cx);
+        });
         window.set_window_title("Download File Info");
         let (category, folder) = self.engine.default_target(&name);
         self.category = category;
@@ -689,15 +698,14 @@ impl AddDialog {
     }
 
 
-    /// The address, with whether it can be resumed at its end. A long address fades
-    /// out under the badge instead of running into it.
+    /// The address, with whether it can be resumed at its end. The address stops
+    /// short of the badge (see `on_probed`), so the two never overlap.
     fn render_url_field(&self, theme: &Theme) -> impl IntoElement {
         let badge = match self.probe.as_ref().map(|info| info.resumable) {
             Some(true) => Some((Icon::Check, "Resumable", theme.success)),
             Some(false) => Some((Icon::Alert, "Can't resume", theme.warning)),
             None => None,
         };
-        let field_bg = theme.input_readonly;
         // Pale tinted badges fade into light glass; there they are solid instead.
         let solid_badges = theme.liquid && !theme.dark;
         let white: gpui::Hsla = gpui::white();
@@ -709,15 +717,8 @@ impl AddDialog {
                     .bottom(px(1.))
                     .right(px(1.))
                     .flex()
-                    .rounded_r(px(theme.radius))
-                    .overflow_hidden()
-                    .child(div().w(px(28.)).h_full().bg(gpui::linear_gradient(
-                        90.,
-                        gpui::linear_color_stop(field_bg.opacity(0.), 0.),
-                        gpui::linear_color_stop(field_bg, 1.),
-                    )))
                     .child(
-                        div().h_full().flex().items_center().pr(px(5.)).bg(field_bg).child(
+                        div().h_full().flex().items_center().pr(px(5.)).child(
                             div()
                                 .flex()
                                 .items_center()

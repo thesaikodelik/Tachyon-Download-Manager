@@ -88,6 +88,8 @@ pub struct TextInput {
     masked: bool,
     /// Selectable and copyable, but not editable (like IDM's address fields).
     read_only: bool,
+    /// Room kept free at the right end for something laid over the box, such as a badge.
+    trailing_space: Pixels,
 }
 
 const BULLET: char = '•';
@@ -110,6 +112,7 @@ impl TextInput {
             numeric: false,
             masked: false,
             read_only: false,
+            trailing_space: px(0.),
         }
     }
 
@@ -132,6 +135,14 @@ impl TextInput {
     pub fn read_only(mut self) -> Self {
         self.read_only = true;
         self
+    }
+
+    /// Keeps the text clear of the box's right `space` pixels.
+    pub fn set_trailing_space(&mut self, space: Pixels, cx: &mut Context<Self>) {
+        if self.trailing_space != space {
+            self.trailing_space = space;
+            cx.notify();
+        }
     }
 
     /// Byte offset in the displayed line for a byte offset in the content.
@@ -763,6 +774,7 @@ impl Render for TextInput {
             .w_full()
             .h(px(theme.control_height))
             .px(px(if theme.fluent { 10. } else { 8. }))
+            .when(self.trailing_space > px(0.), |this| this.pr(self.trailing_space))
             .rounded(px(if theme.liquid { theme.control_height / 2. } else { theme.radius }))
             .border_1()
             .text_color(theme.text)
