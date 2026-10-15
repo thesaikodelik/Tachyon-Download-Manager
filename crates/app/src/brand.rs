@@ -6,7 +6,7 @@ use gpui::{AnyElement, App, AppContext, Context, FontWeight, Hsla, Window, div, 
 use crate::app;
 use crate::assets::Icon;
 use crate::theme::Theme;
-use crate::widgets::{Button, fit_window_height, icon, separator, title_bar};
+use crate::widgets::{Button, Tooltip, fit_window_height, icon, separator, title_bar};
 
 const ORIGINAL_AUTHOR: &str = "sonatina-dream";
 const ORIGINAL_URL: &str = "https://github.com/sonatina-dream/Tachyon-Download-Manager";
@@ -119,9 +119,10 @@ fn credit_row(id: &'static str, role: &'static str, name: &'static str, url: &'s
         .child(icon(Icon::External, px(13.), theme.muted))
 }
 
-/// A small, optional "Sponsor" link beside OK: support for the Windows edition.
+/// A small, optional "Buy me a coffee" link beside OK: support for the Windows
+/// edition, as its tooltip says (the About window credits two people).
 fn sponsor_link(theme: &Theme) -> impl IntoElement {
-    let heart: Hsla = gpui::rgb(0xe5484d).into();
+    let cup: Hsla = gpui::rgb(0xb7793e).into();
     let (muted, text) = (theme.muted, theme.text);
     div()
         .id("sponsor")
@@ -135,9 +136,10 @@ fn sponsor_link(theme: &Theme) -> impl IntoElement {
         .text_size(px(12.))
         .text_color(muted)
         .hover(move |s| s.text_color(text))
+        .tooltip(Tooltip::text("Supports the Windows edition by thesaikodelik"))
         .on_click(|_, _, cx| cx.open_url(SPONSOR_URL))
-        .child(icon(Icon::Heart, px(12.), heart))
-        .child("Sponsor")
+        .child(icon(Icon::Coffee, px(13.), cup))
+        .child("Buy me a coffee")
 }
 
 impl Render for AboutDialog {
