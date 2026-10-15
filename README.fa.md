@@ -11,7 +11,6 @@
   <img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="مجوز MIT">
   <img src="https://img.shields.io/badge/made%20with-Rust-b7410e?logo=rust&logoColor=white" alt="ساخته‌شده با Rust">
   <img src="https://img.shields.io/badge/size-23%20MB-6e40c9" alt="۲۳ مگابایت">
-  <a href="https://github.com/sponsors/thesaikodelik"><img src="https://img.shields.io/badge/buy%20me%20a%20coffee-%E2%98%95-b7793e" alt="یک قهوه مهمانم کنید"></a>
 </p>
 
 <p align="center">
@@ -30,14 +29,7 @@
 
 </div>
 
-<table dir="rtl">
-  <tr>
-    <td align="center" width="25%">⚡<br><b>سریع</b><br><sub>تا ۳۲ اتصال برای هر فایل</sub></td>
-    <td align="center" width="25%">🎬<br><b>ویدیو</b><br><sub>یوتیوب و سایت‌های دیگر، تا 4K</sub></td>
-    <td align="center" width="25%">🧩<br><b>همهٔ مرورگرها</b><br><sub>کروم، اج، فایرفاکس، بریو…</sub></td>
-    <td align="center" width="25%">🔒<br><b>خصوصی</b><br><sub>همه‌چیز روی کامپیوتر خودتان</sub></td>
-  </tr>
-</table>
+<p align="center"><img src="docs/screenshots/windows/highlights-fa.png" width="100%" alt="سریع، ویدیو، همهٔ مرورگرها، خصوصی"></p>
 
 ---
 
@@ -96,7 +88,7 @@
 <table>
   <tr>
     <td width="50%"><img src="docs/screenshots/windows/options.png" alt="تنظیمات"></td>
-    <td width="50%"><img src="docs/screenshots/windows/complete.png" alt="پایان دانلود"><br><br><img src="docs/screenshots/windows/about.png" width="60%" alt="دربارهٔ برنامه"></td>
+    <td width="50%"><img src="docs/screenshots/windows/complete.png" alt="پایان دانلود"></td>
   </tr>
   <tr>
     <td align="center"><sub>تنظیمات به سبک تنظیمات ویندوز ۱۱</sub></td>

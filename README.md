@@ -11,7 +11,6 @@
   <img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT license">
   <img src="https://img.shields.io/badge/made%20with-Rust-b7410e?logo=rust&logoColor=white" alt="Made with Rust">
   <img src="https://img.shields.io/badge/size-23%20MB-6e40c9" alt="23 MB">
-  <a href="https://github.com/sponsors/thesaikodelik"><img src="https://img.shields.io/badge/buy%20me%20a%20coffee-%E2%98%95-b7793e" alt="Buy me a coffee"></a>
 </p>
 
 <p align="center">
@@ -27,14 +26,7 @@
 over downloads from your browser, saves **videos from YouTube and hundreds of other sites**,
 and wraps it all in a Windows 11 *Liquid Glass* look. One 23 MB program, no ads, no tracking.
 
-<table>
-  <tr>
-    <td align="center" width="25%">⚡<br><b>Fast</b><br><sub>up to 32 connections per file</sub></td>
-    <td align="center" width="25%">🎬<br><b>Videos</b><br><sub>YouTube and more, up to 4K</sub></td>
-    <td align="center" width="25%">🧩<br><b>Every browser</b><br><sub>Chrome, Edge, Firefox, Brave…</sub></td>
-    <td align="center" width="25%">🔒<br><b>Private</b><br><sub>everything stays on your PC</sub></td>
-  </tr>
-</table>
+<p align="center"><img src="docs/screenshots/windows/highlights.png" width="100%" alt="Fast, videos, every browser, private"></p>
 
 ---
 
@@ -92,7 +84,7 @@ dark or following Windows. Animations follow Windows' own setting.
 <table>
   <tr>
     <td width="50%"><img src="docs/screenshots/windows/options.png" alt="Options"></td>
-    <td width="50%"><img src="docs/screenshots/windows/complete.png" alt="Download complete"><br><br><img src="docs/screenshots/windows/about.png" width="60%" alt="About"></td>
+    <td width="50%"><img src="docs/screenshots/windows/complete.png" alt="Download complete"></td>
   </tr>
   <tr>
     <td align="center"><sub>Options, laid out like Windows 11 Settings</sub></td>
