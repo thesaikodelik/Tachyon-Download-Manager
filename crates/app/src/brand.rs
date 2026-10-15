@@ -138,7 +138,7 @@ fn sponsor_link(theme: &Theme) -> impl IntoElement {
         .hover(move |s| s.text_color(text))
         .tooltip(Tooltip::text("Supports the Windows edition by thesaikodelik"))
         .on_click(|_, _, cx| cx.open_url(SPONSOR_URL))
-        .child(icon(Icon::Coffee, px(13.), cup))
+        .child(icon(Icon::Coffee, px(17.), cup))
         .child("Buy me a coffee")
 }
 

@@ -59,9 +59,10 @@ fn filter_key(filter: &Filter) -> &'static str {
 }
 /// How long folding or unfolding the categories takes.
 const TREE_MOTION: Duration = Duration::from_millis(220);
-/// Where the category tree's guide line runs: under the chevron that folds the
-/// categories (10px padding + half the 10px glyph, minus half the line's width).
-const TREE_LINE_X: f32 = 14.;
+/// The column of the accent bars: All Downloads' bar (just right of the fold
+/// chevron), and under it the category tree's thin guide line and the categories'
+/// bars, close to their text.
+const TREE_LINE_X: f32 = 20.;
 /// Where indented category rows start, just past the guide line.
 const TREE_INDENT: f32 = 26.;
 
@@ -812,17 +813,17 @@ impl MainWindow {
                     .flex()
                     .flex_col()
                     .gap(px(2.))
-                    // The tree's guide line: from just under the chevron to the bottom of
-                    // the last category. The chevron sits mid-row in All Downloads' 32px
-                    // row, so its lower tip is 11px above that row's end (plus the 2px gap).
+                    // The tree's guide line: a hairline down the middle of the 3px accent
+                    // bars, from just under All Downloads' bar (which ends 10px above its
+                    // 32px row's end, plus the 2px gap) to the bottom of the last category.
                     .when(theme.fluent, |this| {
                         this.child(
                             div()
                                 .absolute()
-                                .left(px(TREE_LINE_X))
-                                .top(px(-11.))
+                                .left(px(TREE_LINE_X + 1.))
+                                .top(px(-9.))
                                 .bottom_0()
-                                .w(px(2.))
+                                .w(px(1.))
                                 .rounded_full()
                                 .bg(theme.accent.opacity(0.3)),
                         )
