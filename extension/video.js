@@ -22,10 +22,57 @@
     hiddenHere = (s.hiddenSites || []).includes(site);
     if (!enabled || hiddenHere) hide(true);
   }
-  chrome.storage.local.get(["videoButton", "hiddenSites"]).then(applySettings);
-  chrome.storage.onChanged.addListener((_changes, area) => {
-    if (area === "local") chrome.storage.local.get(["videoButton", "hiddenSites"]).then(applySettings);
-  });
+
+  // ---- Talking to the extension ----
+  // Once the extension is reloaded or updated, this copy in an already open page is
+  // cut off from it ("Extension context invalidated"): it then removes its button and
+  // steps aside, and reloading the page brings the new copy.
+  let retired = false;
+  function connected() {
+    try {
+      return Boolean(chrome.runtime?.id);
+    } catch {
+      return false;
+    }
+  }
+  function retire() {
+    if (retired) return;
+    retired = true;
+    try {
+      document.querySelector("tachyon-video-button")?.remove();
+    } catch {}
+  }
+  /** Asks the extension; null if it can't answer. */
+  async function ask(message) {
+    if (!connected()) return retire(), null;
+    try {
+      return await chrome.runtime.sendMessage(message);
+    } catch {
+      if (!connected()) retire();
+      return null;
+    }
+  }
+  async function stored(keys) {
+    if (!connected()) return retire(), {};
+    try {
+      return await chrome.storage.local.get(keys);
+    } catch {
+      return {};
+    }
+  }
+  async function store(values) {
+    if (!connected()) return retire();
+    try {
+      await chrome.storage.local.set(values);
+    } catch {}
+  }
+
+  stored(["videoButton", "hiddenSites"]).then(applySettings);
+  try {
+    chrome.storage.onChanged.addListener((_changes, area) => {
+      if (area === "local") stored(["videoButton", "hiddenSites"]).then(applySettings);
+    });
+  } catch {}
 
   // ---- UI, in a closed shadow root so pages can't restyle it ----
   const host = document.createElement("tachyon-video-button");
@@ -214,6 +261,7 @@
   document.addEventListener(
     "mousemove",
     (e) => {
+      if (retired) return;
       if (!enabled || hiddenHere || document.fullscreenElement || !downloadablePage()) {
         if (video) hide();
         return;
@@ -246,7 +294,7 @@
     const src = video?.currentSrc || video?.src;
     if (isHttp(src)) list.push({ url: src });
     try {
-      const seen = await chrome.runtime.sendMessage({ type: "media-list" });
+      const seen = await ask({ type: "media-list" });
       for (const m of seen || []) {
         const known = list.find((c) => c.url === m.url);
         if (known) known.size = m.size;
@@ -289,9 +337,7 @@
   function pageQualities(early = false) {
     const page = location.href;
     if (!qualities.has(page)) {
-      const asked = chrome.runtime
-        .sendMessage({ type: "media-formats", url: page, early })
-        .catch(() => ({ offline: true }));
+      const asked = ask({ type: "media-formats", url: page, early }).then((r) => r ?? { offline: true });
       qualities.set(page, asked);
       // Ask again next time unless it worked.
       asked.then((r) => {
@@ -375,7 +421,7 @@
           size: candidate.size,
         }
       : { type: "download-video", url: candidate.url, filename: fileName(candidate.url), referrer: location.href };
-    const ok = await chrome.runtime.sendMessage(message);
+    const ok = await ask(message);
     label.textContent = ok ? "Sent to Tachyon" : "Tachyon isn't running";
     button.classList.add("open");
     setTimeout(() => {
@@ -434,9 +480,9 @@
       {
         text: `Hide on ${site}`,
         run: async () => {
-          const { hiddenSites = [] } = await chrome.storage.local.get("hiddenSites");
+          const { hiddenSites = [] } = await stored("hiddenSites");
           if (!hiddenSites.includes(site)) hiddenSites.push(site);
-          await chrome.storage.local.set({ hiddenSites });
+          await store({ hiddenSites });
           overUi = false;
         },
       },
