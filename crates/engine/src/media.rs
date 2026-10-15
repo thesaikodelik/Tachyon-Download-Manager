@@ -77,9 +77,22 @@ fn find(tools_dir: &Path, name: &str) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// On Windows yt-dlp is kept unpacked in this folder of the tools folder: the
+/// one-file build unpacks itself on every run, which costs about half a second.
+const YT_DLP_DIR: &str = "yt-dlp";
+const YT_DLP_DIR_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_win.zip";
+const YT_DLP_LATEST: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest";
+
+/// Tachyon's own yt-dlp: the unpacked one on Windows, else the one-file one.
+fn own_yt_dlp(tools_dir: &Path) -> Option<PathBuf> {
+    let unpacked = tools_dir.join(YT_DLP_DIR).join(YT_DLP);
+    let single = tools_dir.join(YT_DLP);
+    [unpacked, single].into_iter().find(|p| p.is_file())
+}
+
 pub(crate) fn tools(tools_dir: &Path) -> MediaTools {
     MediaTools {
-        yt_dlp: find(tools_dir, YT_DLP),
+        yt_dlp: own_yt_dlp(tools_dir).or_else(|| find(tools_dir, YT_DLP)),
         js: Some(tools_dir.join(QJS)).filter(|p| p.is_file()),
         ffmpeg: find(tools_dir, FFMPEG),
     }
@@ -145,6 +158,30 @@ fn install_lock() -> &'static tokio::sync::Mutex<()> {
 /// to date in the background. Part of Tachyon, so the user is never asked.
 pub(crate) async fn ensure_yt_dlp(client: &Client, settings: &Settings, tools_dir: &Path) -> Result<PathBuf, EngineError> {
     let _guard = install_lock().lock().await;
+    if cfg!(windows) {
+        let dir = tools_dir.join(YT_DLP_DIR);
+        let exe = dir.join(YT_DLP);
+        if exe.is_file() {
+            // Weekly: is there a newer release? Checked in the background.
+            let marker = dir.join(".checked");
+            if age(&marker).is_none_or(|a| a > UPDATE_AFTER) {
+                let _ = std::fs::write(&marker, b"");
+                let (client, tools_dir) = (client.clone(), tools_dir.to_path_buf());
+                tokio::spawn(async move {
+                    if let Err(e) = update_unpacked(&client, &tools_dir).await {
+                        log::warn!("updating yt-dlp failed: {e}");
+                    }
+                });
+            }
+            return Ok(exe);
+        }
+        tokio::fs::create_dir_all(tools_dir).await.map_err(io)?;
+        log::info!("fetching yt-dlp");
+        install_unpacked(client, tools_dir).await?;
+        // The one-file copy older versions of Tachyon used.
+        let _ = std::fs::remove_file(tools_dir.join(YT_DLP));
+        return Ok(exe);
+    }
     let own = tools_dir.join(YT_DLP);
     if own.is_file() {
         if age(&own).is_some_and(|age| age > UPDATE_AFTER) {
@@ -168,6 +205,55 @@ pub(crate) async fn ensure_yt_dlp(client: &Client, settings: &Settings, tools_di
     log::info!("fetching yt-dlp");
     fetch(client, YT_DLP_URL, &own).await?;
     Ok(own)
+}
+
+/// Fetches the latest unpacked yt-dlp and puts it in place of the current one.
+async fn install_unpacked(client: &Client, tools_dir: &Path) -> Result<(), EngineError> {
+    let zip = tools_dir.join("yt-dlp_win.zip");
+    fetch(client, YT_DLP_DIR_URL, &zip).await?;
+    let fresh = tools_dir.join(format!("{YT_DLP_DIR}.new"));
+    let _ = tokio::fs::remove_dir_all(&fresh).await;
+    tokio::fs::create_dir_all(&fresh).await.map_err(io)?;
+    // Windows 10 and later ship tar, which reads zip files.
+    let mut tar = Command::new("tar");
+    tar.arg("-xf").arg(&zip).arg("-C").arg(&fresh).stdout(Stdio::null()).stderr(Stdio::piped());
+    #[cfg(windows)]
+    tar.creation_flags(0x0800_0000);
+    let out = tar.output().await.map_err(io)?;
+    let _ = tokio::fs::remove_file(&zip).await;
+    if !out.status.success() || !fresh.join(YT_DLP).is_file() {
+        let _ = tokio::fs::remove_dir_all(&fresh).await;
+        return Err(io(format!("unpacking yt-dlp failed: {}", String::from_utf8_lossy(&out.stderr).trim())));
+    }
+    let current = tools_dir.join(YT_DLP_DIR);
+    let old = tools_dir.join(format!("{YT_DLP_DIR}.old"));
+    let _ = tokio::fs::remove_dir_all(&old).await;
+    if current.exists() {
+        // Fails while a download is using it: then the update waits for next time.
+        tokio::fs::rename(&current, &old).await.map_err(io)?;
+    }
+    tokio::fs::rename(&fresh, &current).await.map_err(io)?;
+    let _ = tokio::fs::remove_dir_all(&old).await;
+    Ok(())
+}
+
+/// Replaces the unpacked yt-dlp if GitHub has a newer release than it.
+async fn update_unpacked(client: &Client, tools_dir: &Path) -> Result<(), EngineError> {
+    // ".../releases/latest" redirects to ".../releases/tag/<version>".
+    let response = client.head(YT_DLP_LATEST).send().await.map_err(|e| EngineError::Network(e.to_string()))?;
+    let latest = response.url().path().rsplit('/').next().unwrap_or("").to_string();
+    let exe = tools_dir.join(YT_DLP_DIR).join(YT_DLP);
+    let mut cmd = Command::new(&exe);
+    cmd.arg("--version").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000);
+    let current = cmd.output().await.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    if latest.is_empty() || latest == current {
+        return Ok(());
+    }
+    log::info!("updating yt-dlp {current} to {latest}");
+    let _guard = install_lock().lock().await;
+    install_unpacked(client, tools_dir).await
 }
 
 fn age(path: &Path) -> Option<Duration> {
@@ -631,6 +717,16 @@ async fn update_now(yt_dlp: &Path, settings: &Settings, tools_dir: &Path) -> boo
     if !yt_dlp.starts_with(tools_dir) {
         // Someone else's copy (on the PATH): theirs to update.
         return false;
+    }
+    if yt_dlp.starts_with(tools_dir.join(YT_DLP_DIR)) {
+        // The unpacked build is replaced whole rather than updating itself.
+        return match update_unpacked(&Client::new(), tools_dir).await {
+            Ok(()) => true,
+            Err(e) => {
+                log::warn!("updating yt-dlp failed: {e}");
+                false
+            }
+        };
     }
     let _guard = install_lock().lock().await;
     let mut cmd = command(yt_dlp, settings, None);
