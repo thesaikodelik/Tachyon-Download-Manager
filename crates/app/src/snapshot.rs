@@ -282,6 +282,11 @@ fn run_command(line: &str, cx: &mut App) {
                 w.update(cx, |d, window, cx| d.add(name == "add-start", window, cx)).ok();
             }
         }
+        "quality" => {
+            for w in windows.iter().filter_map(|w| w.downcast::<AddDialog>()) {
+                w.update(cx, |d, _, cx| d.dev_choose_quality(number.unwrap_or(0) as usize, cx)).ok();
+            }
+        }
         "add-category-menu" => {
             for w in windows.iter().filter_map(|w| w.downcast::<AddDialog>()) {
                 w.update(cx, |d, _, cx| d.dev_toggle_category_menu(cx)).ok();

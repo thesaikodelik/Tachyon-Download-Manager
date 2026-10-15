@@ -405,6 +405,16 @@
     holder.classList.add("shown");
   }
 
+  /** Hands the page to Tachyon, which asks for the quality in its own window. */
+  async function openInTachyon() {
+    const ok = await ask({ type: "download-video", url: location.href, referrer: location.href, filename: "" });
+    label.textContent = ok ? "Opened in Tachyon" : "Tachyon isn't running";
+    button.classList.add("open");
+    setTimeout(() => {
+      if (!overUi) hide();
+    }, 1400);
+  }
+
   function pageFileName(candidate) {
     const title = (candidate.title || document.title || "video").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 120);
     return `${title || "video"}.${candidate.ext || "mp4"}`;
@@ -452,12 +462,16 @@
   button.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (candidates.length === 1) {
+    if (candidates.some((c) => c.page)) {
+      // A video page: Tachyon's Download File Info shows its qualities, with the
+      // name and folder, in one place.
+      openInTachyon();
+    } else if (candidates.length === 1) {
       download(candidates[0]);
     } else if (candidates.length > 1) {
       openMenu(
         candidates.map((c) => ({
-          text: c.page ? c.label : nameOf(c.url),
+          text: nameOf(c.url),
           note: formatSize(c.size),
           run: () => download(c),
         })),

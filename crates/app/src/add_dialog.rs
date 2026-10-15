@@ -7,8 +7,8 @@ use gpui::{
     Subscription, Window, anchored, deferred, div, prelude::*, px, size,
 };
 use tachyon_engine::{
-    AddRequest, Credentials, DownloadSnapshot, DownloadStatus, DuplicateAction, Engine, GENERAL, ProbeInfo,
-    RequestSpec, derive_file_name, extension_of,
+    AddRequest, Credentials, DownloadSnapshot, DownloadStatus, DuplicateAction, Engine, GENERAL, MediaInfo, MediaSpec,
+    ProbeInfo, RequestSpec, clean_file_name, derive_file_name, extension_of,
 };
 
 use crate::app;
@@ -26,6 +26,7 @@ use crate::widgets::{
 const LABEL_WIDTH: f32 = 74.;
 /// Width of the category drop-down and of the list it opens.
 const CATEGORY_PICKER_WIDTH: f32 = 200.;
+const CONTACTING: &str = "Contacting the server…";
 
 pub enum AddPrefill {
     /// Use the clipboard if it holds a link.
@@ -69,6 +70,12 @@ pub struct AddDialog {
     captured_name: Option<String>,
     probe: Option<ProbeInfo>,
     probe_error: Option<String>,
+    /// The address is a video page (YouTube…): its qualities, and the one picked.
+    media: Option<MediaInfo>,
+    media_choice: usize,
+    quality_menu: bool,
+    /// What the dialog says while it checks the address.
+    probing_note: &'static str,
     error: Option<String>,
     _subscriptions: Vec<Subscription>,
 }
@@ -158,6 +165,10 @@ impl AddDialog {
             captured_name,
             probe: None,
             probe_error: None,
+            media: None,
+            media_choice: 0,
+            quality_menu: false,
+            probing_note: CONTACTING,
             error: None,
             _subscriptions: subscriptions,
         };
@@ -206,10 +217,33 @@ impl AddDialog {
         }
         self.error = None;
         self.stage = Stage::Probing;
+        self.probing_note = CONTACTING;
         cx.notify();
         let probe = self.engine.probe(spec.clone());
+        let engine = self.engine.clone();
+        let already_video = spec.media.is_some();
         cx.spawn_in(window, async move |this, cx| {
             let result = probe.await;
+            // A web page rather than a file: it may be a video page (YouTube and the
+            // like), whose video downloads in a quality picked here.
+            let page = !already_video
+                && match &result {
+                    Ok(info) => info.content_type.as_deref().is_some_and(|t| t.starts_with("text/html")),
+                    Err(_) => true,
+                };
+            if page {
+                this.update(cx, |this, cx| {
+                    this.probing_note = "Looking for a video on this page…";
+                    cx.notify();
+                })
+                .ok();
+                if let Ok(info) = engine.media_formats(spec.url.clone()).await
+                    && !info.choices.is_empty()
+                {
+                    this.update_in(cx, |this, window, cx| this.on_media(spec, info, window, cx)).ok();
+                    return;
+                }
+            }
             this.update_in(cx, |this, window, cx| this.on_probed(spec, result, window, cx)).ok();
         })
         .detach();
@@ -273,6 +307,95 @@ impl AddDialog {
             }
             cx.notify();
         }
+    }
+
+    /// The address is a video page: offer its qualities, the best picked.
+    fn on_media(&mut self, mut spec: RequestSpec, info: MediaInfo, window: &mut Window, cx: &mut Context<Self>) {
+        self.media = Some(info);
+        self.media_choice = 0;
+        let probe = self.apply_quality(cx);
+        self.captured_name = Some(probe.file_name.clone());
+        spec.media = self.base_request.media.clone();
+        self.on_probed(spec, Ok(probe), window, cx);
+    }
+
+    /// Makes the picked quality the download's request and the file's details.
+    fn apply_quality(&mut self, cx: &mut Context<Self>) -> ProbeInfo {
+        let Some(info) = self.media.as_ref() else { return ProbeInfo::default() };
+        let Some(choice) = info.choices.get(self.media_choice) else { return ProbeInfo::default() };
+        self.base_request.media = Some(MediaSpec { format: choice.format.clone(), size: choice.size, cookies: Vec::new() });
+        let probe = ProbeInfo {
+            final_url: self.url.read(cx).text().trim().to_string(),
+            total: choice.size,
+            resumable: true,
+            file_name: format!("{}.{}", clean_file_name(&info.title), choice.ext),
+            content_type: Some(if choice.ext == "m4a" { "audio/mp4" } else { "video/mp4" }.into()),
+            ..Default::default()
+        };
+        self.probe = Some(probe.clone());
+        probe
+    }
+
+    #[cfg(feature = "dev-snapshots")]
+    pub(crate) fn dev_choose_quality(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.choose_quality(index, cx);
+    }
+
+    fn choose_quality(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.media.as_ref().is_none_or(|m| index >= m.choices.len()) {
+            return;
+        }
+        self.media_choice = index;
+        self.quality_menu = false;
+        let probe = self.apply_quality(cx);
+        // A name the user typed stays; only its extension follows the quality.
+        let current = self.file_name.read(cx).text();
+        let stem = current.rsplit_once('.').map(|(stem, _)| stem.to_string()).unwrap_or(current);
+        let ext = extension_of(&probe.file_name).unwrap_or_else(|| "mp4".into());
+        self.file_name.update(cx, |input, cx| input.set_text(format!("{stem}.{ext}"), cx));
+        cx.notify();
+    }
+
+    /// The video's qualities, as a drop-down like the category's.
+    fn render_quality_picker(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme_copy = *theme;
+        let choices = self.media.as_ref().map(|m| m.choices.clone()).unwrap_or_default();
+        let label = |c: &tachyon_engine::MediaChoice| match c.size {
+            Some(size) => format!("{} \u{b7} {}", c.label, format::bytes(size)),
+            None => c.label.clone(),
+        };
+        let current = choices.get(self.media_choice).map(label).unwrap_or_default();
+        div()
+            .flex()
+            .flex_col()
+            .when(self.quality_menu, |this| {
+                this.child(
+                    deferred(
+                        anchored().snap_to_window_with_margin(px(8.)).child(
+                            menu_panel(&theme_copy)
+                                .id("quality-menu")
+                                .w(px(CATEGORY_PICKER_WIDTH))
+                                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                                    this.quality_menu = false;
+                                    cx.notify();
+                                }))
+                                .children(choices.iter().enumerate().map(|(ix, c)| {
+                                    menu_item(("quality", ix), None, label(c), ix == self.media_choice, &theme_copy)
+                                        .on_click(cx.listener(move |this, _, _, cx| this.choose_quality(ix, cx)))
+                                })),
+                        ),
+                    )
+                    .with_priority(1),
+                )
+            })
+            .child(
+                dropdown_trigger("quality", Some(Icon::Video), current, self.quality_menu, theme).on_click(
+                    cx.listener(|this, _, _, cx| {
+                        this.quality_menu = !this.quality_menu;
+                        cx.notify();
+                    }),
+                ),
+            )
     }
 
     fn choose_category(&mut self, category: String, cx: &mut Context<Self>) {
@@ -790,6 +913,14 @@ impl AddDialog {
             .flex_col()
             .gap(px(8.))
             .child(field_row_inline("URL", LABEL_WIDTH, self.render_url_field(theme), theme))
+            .when(self.media.is_some(), |this| {
+                this.child(field_row_inline(
+                    "Quality",
+                    LABEL_WIDTH,
+                    div().w(px(CATEGORY_PICKER_WIDTH)).child(self.render_quality_picker(theme, cx)),
+                    theme,
+                ))
+            })
             .child(
                 div()
                     .flex()
@@ -867,7 +998,7 @@ impl AddDialog {
                         .gap(px(8.))
                         .text_color(theme.muted)
                         .child(icon(Icon::Globe, px(14.), theme.accent))
-                        .child("Contacting the server…"),
+                        .child(self.probing_note),
                 )
                 .into_any_element(),
             Stage::Info => self.render_info_fluent(theme, cx),
@@ -957,7 +1088,7 @@ impl Render for AddDialog {
                         .gap(px(8.))
                         .text_color(theme.muted)
                         .child(icon(Icon::Globe, px(14.), theme.accent))
-                        .child("Contacting the server…"),
+                        .child(self.probing_note),
                 )
                 .into_any_element(),
             Stage::Info => self.render_info(&theme, cx),

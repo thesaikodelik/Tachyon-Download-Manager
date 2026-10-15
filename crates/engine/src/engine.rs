@@ -242,6 +242,19 @@ impl Engine {
         crate::media::tools(&self.inner.tools_dir())
     }
 
+    /// The qualities a video page offers (YouTube and the many sites yt-dlp knows),
+    /// read without the browser's cookies. Err when the page has no video.
+    pub fn media_formats(&self, url: String) -> impl Future<Output = Result<crate::media::MediaInfo, String>> + Send + 'static {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let settings = self.inner.settings.read().clone();
+        let client = self.inner.client.read().clone();
+        let tools_dir = self.inner.tools_dir();
+        self.inner.handle.spawn(async move {
+            let _ = tx.send(crate::media::list(&url, &[], &settings, &client, &tools_dir).await);
+        });
+        async move { rx.await.unwrap_or_else(|_| Err("cancelled".into())) }
+    }
+
     /// Asks the server about `spec` without downloading anything.
     pub fn probe(&self, spec: RequestSpec) -> impl Future<Output = Result<ProbeInfo, EngineError>> + Send + 'static {
         let mut spec = spec;

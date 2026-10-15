@@ -271,6 +271,12 @@ pub(crate) async fn list(
     client: &Client,
     tools_dir: &Path,
 ) -> Result<MediaInfo, String> {
+    // Read moments ago (the extension reads pages ahead): no need to read it again.
+    if let Some(page) = saved_page(tools_dir, url)
+        && let Ok(json) = std::fs::read(&page).map_err(|_| ()).and_then(|b| serde_json::from_slice::<Value>(&b).map_err(|_| ()))
+    {
+        return Ok(choices(&json, find(tools_dir, FFMPEG).is_some()));
+    }
     let started = std::time::Instant::now();
     let (yt_dlp, js) = ready_tools(client, settings, tools_dir).await.map_err(|e| format!("couldn't get yt-dlp: {e}"))?;
     let tools_ready = started.elapsed();
