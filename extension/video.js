@@ -360,9 +360,8 @@
       const result = await pageQualities();
       if (result?.choices?.length) {
         candidates = result.choices.map((c) => ({ ...c, page: true, title: result.title }));
-        const best = candidates[0];
-        label.textContent =
-          candidates.length === 1 ? `${best.label} · ${formatSize(best.size)}` : `${best.label} · ${candidates.length} qualities`;
+        // The quality is picked in Tachyon's window.
+        label.textContent = "Download";
       } else if (result?.missing) {
         label.textContent = "Tachyon needs yt-dlp – see Tachyon";
       } else if (result?.offline) {
