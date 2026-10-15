@@ -116,8 +116,14 @@ pub struct SetupWindow {
 
 impl SetupWindow {
     fn new(uninstall: bool, _window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let installed = reg::read(UNINSTALL_KEY, "DisplayVersion");
-        let folder_path = reg::read(UNINSTALL_KEY, "InstallLocation").map(PathBuf::from).unwrap_or_else(default_install_dir);
+        let mut installed = reg::read(UNINSTALL_KEY, "DisplayVersion");
+        let mut folder_path = reg::read(UNINSTALL_KEY, "InstallLocation").map(PathBuf::from).unwrap_or_else(default_install_dir);
+        // Screenshots: a first install into a sample folder, nothing from this computer.
+        #[cfg(feature = "dev-snapshots")]
+        if let Some(demo) = std::env::var_os("TACHYON_SETUP_DEMO_DIR") {
+            installed = None;
+            folder_path = PathBuf::from(demo);
+        }
         let folder = cx.new(|cx| TextInput::new(cx, "Folder").with_text(crate::format::display_path(&folder_path)));
         Self {
             uninstall,
