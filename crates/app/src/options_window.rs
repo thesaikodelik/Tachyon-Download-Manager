@@ -421,6 +421,22 @@ impl OptionsWindow {
                 }),
             ))
             .child(div().h(px(6.)))
+            .child(section_title("Updates", theme))
+            .child(Checkbox::new("check-updates", "Check for new versions of Tachyon every day", d.check_for_updates).on_toggle(
+                cx.listener(|this, v: &bool, _, cx| {
+                    this.draft.check_for_updates = *v;
+                    cx.notify();
+                }),
+            ))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .child(Button::new("check-now", "Check Now").on_click(|_, _, cx| crate::updater::check(true, cx)))
+                    .child(div().text_color(theme.muted).child(crate::updater::status_line(cx))),
+            )
+            .child(div().h(px(6.)))
             .child(section_title("Sounds", theme))
             .child(Checkbox::new("sounds", "Play a sound when a download finishes or fails", d.play_sounds).on_toggle(
                 cx.listener(|this, v: &bool, _, cx| {

@@ -1315,6 +1315,7 @@ impl Render for MainWindow {
                                     .border_color(theme.border)
                                     .overflow_hidden()
                             })
+                            .children(crate::updater::banner(&theme, cx))
                             .child(self.render_header(&theme, cx))
                             .child(
                                 div()

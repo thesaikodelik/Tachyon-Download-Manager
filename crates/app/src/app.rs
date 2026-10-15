@@ -29,6 +29,10 @@ pub struct AppState {
     options_window: Option<WindowHandle<OptionsWindow>>,
     scheduler_window: Option<WindowHandle<SchedulerWindow>>,
     last_clipboard: Option<String>,
+    /// What the update check found.
+    pub update: crate::updater::UpdateState,
+    /// The update bar was closed with Later.
+    pub update_dismissed: bool,
 }
 
 impl Global for AppState {}
@@ -49,7 +53,10 @@ pub fn init(engine: Arc<Engine>, cx: &mut App) {
         options_window: None,
         scheduler_window: None,
         last_clipboard,
+        update: Default::default(),
+        update_dismissed: false,
     });
+    crate::updater::init(cx);
     cx.spawn(async move |cx| {
         loop {
             gpui::Timer::after(Duration::from_millis(400)).await;

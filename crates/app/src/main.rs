@@ -26,6 +26,7 @@ mod setup;
 mod snapshot;
 mod theme;
 mod tray;
+mod updater;
 mod widgets;
 
 use std::sync::Arc;
@@ -66,7 +67,11 @@ fn main() {
         return;
     }
     if setup::is_setup_launch() {
-        setup::run(false);
+        if std::env::args().any(|a| a == setup::SILENT_FLAG) {
+            setup::run_silent();
+        } else {
+            setup::run(false);
+        }
         return;
     }
 

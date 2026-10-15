@@ -28,6 +28,9 @@ const UNINSTALL_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Unins
 const RUN_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 const SETUP_FLAG: &str = "--setup";
 pub const UNINSTALL_FLAG: &str = "--uninstall";
+/// With --setup: update the installed Tachyon without a window, keeping its
+/// choices, then start it again (used by Tachyon's own updates).
+pub const SILENT_FLAG: &str = "--silent";
 /// Opens Options at the Browser page, for the installer's last step.
 pub const BROWSER_SETUP_FLAG: &str = "--browser-setup";
 
@@ -46,6 +49,29 @@ pub fn is_uninstall_launch() -> bool {
 
 fn default_install_dir() -> PathBuf {
     dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("C:\\")).join("Programs").join("Tachyon")
+}
+
+/// An update: installs over the current installation with the same choices, without
+/// a window, and starts Tachyon again.
+pub fn run_silent() {
+    let start_menu_link = dirs::data_dir().map(|d| d.join("Microsoft\\Windows\\Start Menu\\Programs").join(format!("{PRODUCT}.lnk")));
+    let desktop_link = dirs::desktop_dir().map(|d| d.join(format!("{PRODUCT}.lnk")));
+    let choices = Choices {
+        folder: reg::read(UNINSTALL_KEY, "InstallLocation").map(PathBuf::from).unwrap_or_else(default_install_dir),
+        start_menu: start_menu_link.is_some_and(|p| p.exists()),
+        desktop: desktop_link.is_some_and(|p| p.exists()),
+        autostart: reg::read(RUN_KEY, PRODUCT).is_some(),
+        video: false,
+    };
+    let progress = Mutex::new(Progress::default());
+    match install(&choices, &progress) {
+        Ok(_) => {
+            if let Err(e) = std::process::Command::new(choices.folder.join("tachyon.exe")).spawn() {
+                log::warn!("could not start the updated Tachyon: {e}");
+            }
+        }
+        Err(e) => log::error!("update failed: {e}"),
+    }
 }
 
 /// Runs the installer (or the uninstaller) window until it is done.
@@ -703,8 +729,38 @@ mod processes {
     };
 
     /// Ends every process running `exe` (other than this one) and waits for it.
+    /// Tachyon gets a few seconds to close by itself (saving its downloads) first.
     pub fn stop_all(exe: &Path) {
         let Ok(wanted) = exe.canonicalize() else { return };
+        for _ in 0..40 {
+            if !running(&wanted) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+        terminate(&wanted);
+    }
+
+    fn running(wanted: &Path) -> bool {
+        let mut found = false;
+        each_process(|path, _| found |= path == wanted);
+        found
+    }
+
+    fn terminate(wanted: &Path) {
+        each_process(|path, process| {
+            if path == wanted {
+                // SAFETY: a live process handle opened with PROCESS_TERMINATE.
+                unsafe {
+                    TerminateProcess(process, 0);
+                    WaitForSingleObject(process, 5000);
+                }
+            }
+        });
+    }
+
+    /// Calls `f` with the program path and handle of every other process.
+    fn each_process(mut f: impl FnMut(&Path, windows_sys::Win32::Foundation::HANDLE)) {
         // SAFETY: a process snapshot walked and closed here; handles closed after use.
         unsafe {
             let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -723,9 +779,8 @@ mod processes {
                         let mut len = name.len() as u32;
                         if QueryFullProcessImageNameW(process, 0, name.as_mut_ptr(), &mut len) != 0 {
                             let path = std::path::PathBuf::from(String::from_utf16_lossy(&name[..len as usize]));
-                            if path.canonicalize().is_ok_and(|p| p == wanted) {
-                                TerminateProcess(process, 0);
-                                WaitForSingleObject(process, 5000);
+                            if let Ok(path) = path.canonicalize() {
+                                f(&path, process);
                             }
                         }
                         CloseHandle(process);

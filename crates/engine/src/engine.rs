@@ -248,6 +248,34 @@ impl Engine {
         crate::media::tools(&self.inner.tools_dir())
     }
 
+    /// The latest release of Tachyon on GitHub, if it is newer than `current`.
+    /// TACHYON_UPDATE_URL points the check elsewhere, for testing.
+    pub fn check_for_update(&self, current: &str) -> impl Future<Output = Result<Option<crate::updates::Update>, String>> + Send + 'static {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let client = self.inner.client.read().clone();
+        let current = current.to_string();
+        self.inner.handle.spawn(async move {
+            let url = std::env::var("TACHYON_UPDATE_URL").ok();
+            let _ = tx.send(crate::updates::check(&client, url.as_deref(), &current).await);
+        });
+        async move { rx.await.unwrap_or_else(|_| Err("cancelled".into())) }
+    }
+
+    /// Downloads and checks `update`'s installer; `progress` counts its bytes.
+    pub fn download_update(
+        &self,
+        update: crate::updates::Update,
+        progress: Arc<std::sync::atomic::AtomicU64>,
+    ) -> impl Future<Output = Result<PathBuf, String>> + Send + 'static {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let client = self.inner.client.read().clone();
+        let dir = self.inner.data_dir.join("updates");
+        self.inner.handle.spawn(async move {
+            let _ = tx.send(crate::updates::download(&client, &update, &dir, progress).await);
+        });
+        async move { rx.await.unwrap_or_else(|_| Err("cancelled".into())) }
+    }
+
     /// The qualities a video page offers (YouTube and the many sites yt-dlp knows),
     /// read without the browser's cookies. Err when the page has no video.
     pub fn media_formats(&self, url: String) -> impl Future<Output = Result<crate::media::MediaInfo, String>> + Send + 'static {

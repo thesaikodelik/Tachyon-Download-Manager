@@ -287,6 +287,8 @@ fn run_command(line: &str, cx: &mut App) {
                 w.update(cx, |l, window, cx| l.dev_command(name, window, cx)).ok();
             }
         }
+        "update-check" => crate::updater::check(true, cx),
+        "update-install" => crate::updater::install(cx),
         "quality" => {
             for w in windows.iter().filter_map(|w| w.downcast::<AddDialog>()) {
                 w.update(cx, |d, _, cx| d.dev_choose_quality(number.unwrap_or(0) as usize, cx)).ok();

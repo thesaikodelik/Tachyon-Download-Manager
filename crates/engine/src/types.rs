@@ -556,6 +556,8 @@ pub struct Settings {
     /// Programs whose downloads are taken over, as IDM's list of browsers. A browser
     /// whose extension connects for the first time is added, enabled.
     pub browsers: Vec<BrowserRule>,
+    /// Look for a new version of Tachyon once a day.
+    pub check_for_updates: bool,
     /// File types the extension takes over from the browser, without dots.
     pub capture_extensions: Vec<String>,
     pub play_sounds: bool,
@@ -639,6 +641,7 @@ impl Default for Settings {
                 "*.download.windowsupdate.com".into(),
             ],
             browsers: Vec::new(),
+            check_for_updates: true,
             capture_extensions: DEFAULT_CAPTURE_EXTENSIONS.split_whitespace().map(str::to_string).collect(),
             play_sounds: false,
             virus_scan: false,
