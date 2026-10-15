@@ -208,7 +208,8 @@ impl Theme {
         Self {
             dark,
             // A smoky tint over the blur: pale for Liquid Glass, dark for Smoke.
-            window: if dark { ca(0x0e0e1073) } else { ca(0xffffff40) },
+            // Smoke stays dark even over a white window, while still showing what's behind.
+            window: if dark { ca(0x101014c0) } else { ca(0xffffff40) },
             bg: ca(CLEAR),
             layer: if dark { ca(0xffffff08) } else { ca(0xffffff59) },
             surface: ca(CLEAR),
