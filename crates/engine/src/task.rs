@@ -137,7 +137,16 @@ impl TaskShared {
     }
 
     pub fn segments(&self) -> Option<Vec<SegmentState>> {
-        self.map.lock().as_ref().map(|m| m.snapshot())
+        if let Some(map) = self.map.lock().as_ref() {
+            return Some(map.snapshot());
+        }
+        // A video page arrives over one connection: one segment, filling as it comes.
+        match self.media_progress() {
+            Some((downloaded, Some(total))) if total > 0 => {
+                Some(vec![SegmentState { start: 0, pos: downloaded.min(total), end: total }])
+            }
+            _ => None,
+        }
     }
 
     pub fn downloaded(&self) -> Option<u64> {
@@ -149,12 +158,22 @@ impl TaskShared {
     }
 
     pub fn connections(&self) -> Vec<ConnectionSnapshot> {
-        self.connections.lock().clone()
+        let connections = self.connections.lock().clone();
+        if !connections.is_empty() {
+            return connections;
+        }
+        // yt-dlp's one connection for a video page, as the progress window lists them.
+        let Some((downloaded, _)) = self.media_progress() else { return connections };
+        let state = match self.phase() {
+            DownloadStatus::Finalizing => ConnectionState::Finished,
+            _ if self.speed() > 0 => ConnectionState::Receiving,
+            _ => ConnectionState::Connecting,
+        };
+        vec![ConnectionSnapshot { index: 0, downloaded, state }]
     }
 
     pub fn active_connections(&self) -> usize {
-        self.connections
-            .lock()
+        self.connections()
             .iter()
             .filter(|c| matches!(c.state, ConnectionState::Receiving | ConnectionState::Connecting))
             .count()
