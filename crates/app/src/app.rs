@@ -108,6 +108,7 @@ fn tick(cx: &mut App) {
                     cx,
                 );
             }
+            EngineEvent::LinksCaptured(batch) => open_links_window(*batch, cx),
             EngineEvent::Captured(request) => {
                 open_add_dialog(AddPrefill::Captured(request), cx);
             }
@@ -389,6 +390,26 @@ pub fn open_options(cx: &mut App) {
         cx.global_mut::<AppState>().options_window = Some(handle);
     }
     cx.activate(true);
+}
+
+/// The links of a page the browser sent, to pick from. In front of the browser.
+pub fn open_links_window(batch: tachyon_engine::LinkBatch, cx: &mut App) {
+    let bounds = centered(size(px(860.), px(560.)), cx);
+    let mut options = dialog_options("Download Links", bounds);
+    options.is_resizable = true;
+    let handle = open_styled(options, cx, |window, cx| {
+        cx.new(|cx| crate::links_window::LinksWindow::new(batch, window, cx))
+    });
+    cx.activate(true);
+    if let Ok(handle) = handle {
+        cx.spawn(async move |cx| {
+            for delay in [0, 600] {
+                cx.background_executor().timer(std::time::Duration::from_millis(delay)).await;
+                handle.update(cx, |_, window, _| crate::platform::bring_to_front(window)).ok();
+            }
+        })
+        .detach();
+    }
 }
 
 pub fn open_scheduler(cx: &mut App) {

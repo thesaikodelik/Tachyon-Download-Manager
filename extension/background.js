@@ -11,6 +11,8 @@ const DEFAULTS = {
 };
 
 const MENU_ID = "tachyon-download";
+const MENU_ALL_LINKS = "tachyon-all-links";
+const MENU_SELECTED_LINKS = "tachyon-selected-links";
 const CHECK_IN = "tachyon-check-in";
 // URLs we handed back to the browser after Tachyon refused or was unreachable, or
 // that the user Alt-clicked to keep in the browser.
@@ -188,11 +190,19 @@ function checkIn() {
   fetchConfig();
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
+  // An update keeps the old items: start from none.
+  await chrome.contextMenus.removeAll();
   chrome.contextMenus.create({
     id: MENU_ID,
     title: "Download with Tachyon",
     contexts: ["link", "image", "video", "audio"],
+  });
+  chrome.contextMenus.create({ id: MENU_ALL_LINKS, title: "Download all links with Tachyon", contexts: ["page"] });
+  chrome.contextMenus.create({
+    id: MENU_SELECTED_LINKS,
+    title: "Download selected links with Tachyon",
+    contexts: ["selection"],
   });
   chrome.alarms.create(CHECK_IN, { periodInMinutes: 5 });
   checkIn();
@@ -202,7 +212,38 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === CHECK_IN) checkIn();
 });
 
+/** Asks the page for its links and hands them to Tachyon's Download Links window. */
+async function sendPageLinks(tab, frameId, selected) {
+  let found;
+  try {
+    found = await chrome.tabs.sendMessage(tab.id, { type: "collect-links", selected }, { frameId });
+  } catch {
+    // The page was open before the extension was (re)loaded: it has no helper yet.
+    return;
+  }
+  if (!found?.links?.length) return;
+  const post = async () => {
+    const { port } = await settings();
+    try {
+      const response = await fetch(endpoint(port, "/v1/links"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Tachyon-Client": "extension" },
+        body: JSON.stringify(found),
+        signal: AbortSignal.timeout(5000),
+      });
+      return response.ok;
+    } catch {
+      return null;
+    }
+  };
+  if ((await post()) === null && (await ensureRunning())) await post();
+}
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === MENU_ALL_LINKS || info.menuItemId === MENU_SELECTED_LINKS) {
+    sendPageLinks(tab, info.frameId ?? 0, info.menuItemId === MENU_SELECTED_LINKS);
+    return;
+  }
   if (info.menuItemId !== MENU_ID) return;
   const url = info.linkUrl || info.srcUrl;
   if (!url) return;

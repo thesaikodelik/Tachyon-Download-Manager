@@ -34,6 +34,8 @@ pub(crate) trait Host: Send + Sync {
     fn capture(&self, request: AddRequest, program: Option<&Path>) -> bool;
     /// What the extension in `program` should take over.
     fn config(&self, program: Option<&Path>) -> ClientConfig;
+    /// Links collected from a page, for the user to pick from.
+    fn links(&self, batch: crate::types::LinkBatch);
     /// The qualities a video page offers, from yt-dlp.
     fn media_formats(
         &self,
@@ -76,6 +78,19 @@ struct CaptureBody {
     #[serde(default)]
     cookie_jar: Vec<crate::types::BrowserCookie>,
 }
+
+#[derive(Deserialize)]
+struct LinksBody {
+    #[serde(default)]
+    page: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    links: Vec<crate::types::PageLink>,
+}
+
+/// More links than this on one page are not worth listing.
+const MAX_LINKS: usize = 5000;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -213,6 +228,26 @@ async fn handle(mut stream: TcpStream, peer: SocketAddr, port: u16, host: Arc<dy
     let program = program.as_deref();
     host.seen(program);
     match (request.method.as_str(), request.path.as_str()) {
+        ("POST", "/v1/links") => {
+            let Ok(body) = serde_json::from_slice::<LinksBody>(&request.body) else {
+                respond(&mut stream, "400 Bad Request", r#"{"error":"invalid json"}"#).await;
+                return;
+            };
+            let mut seen = std::collections::HashSet::new();
+            let links: Vec<_> = body
+                .links
+                .into_iter()
+                .filter(|l| url::Url::parse(&l.url).is_ok_and(|u| matches!(u.scheme(), "http" | "https")))
+                .filter(|l| seen.insert(l.url.clone()))
+                .take(MAX_LINKS)
+                .collect();
+            if links.is_empty() {
+                respond(&mut stream, "422 Unprocessable Entity", r#"{"error":"no links"}"#).await;
+                return;
+            }
+            host.links(crate::types::LinkBatch { page: body.page, title: body.title, links });
+            respond(&mut stream, "200 OK", r#"{"ok":true}"#).await;
+        }
         ("POST", "/v1/media/formats") => {
             let Ok(query) = serde_json::from_slice::<MediaQuery>(&request.body) else {
                 respond(&mut stream, "400 Bad Request", r#"{"error":"invalid json"}"#).await;

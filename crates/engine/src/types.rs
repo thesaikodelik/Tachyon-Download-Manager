@@ -100,6 +100,23 @@ pub struct RequestSpec {
     pub media: Option<MediaSpec>,
 }
 
+/// Links collected from a web page by the browser extension.
+#[derive(Clone, Debug, Default)]
+pub struct LinkBatch {
+    /// The page they came from, sent as the referrer.
+    pub page: String,
+    pub title: String,
+    pub links: Vec<PageLink>,
+}
+
+/// One link on a page: its address and the text it was shown with.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PageLink {
+    pub url: String,
+    pub text: String,
+}
+
 /// A video page to download through yt-dlp, in one of the qualities it offered.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -265,6 +282,9 @@ pub enum EngineEvent {
     /// The download limit (Options → Connection) was reached; downloads were stopped
     /// and can start again at `resumes_at` (Unix time).
     QuotaReached { resumes_at: i64 },
+    /// The browser extension sent the links of a page ("Download all links with
+    /// Tachyon") for the user to pick from.
+    LinksCaptured(Box<LinkBatch>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -12,6 +12,7 @@ mod brand;
 mod complete_dialog;
 mod file_icons;
 mod format;
+mod links_window;
 mod main_window;
 mod message_dialog;
 mod native_host;

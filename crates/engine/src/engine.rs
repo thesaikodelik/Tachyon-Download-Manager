@@ -101,6 +101,12 @@ impl integration::Host for IntegrationHost {
         true
     }
 
+    fn links(&self, batch: crate::types::LinkBatch) {
+        if let Some(inner) = self.0.upgrade() {
+            inner.push_event(EngineEvent::LinksCaptured(Box::new(batch)));
+        }
+    }
+
     fn media_formats(
         &self,
         url: String,
