@@ -39,7 +39,7 @@
         display: flex;
         flex-direction: column;
         align-items: flex-end;
-        gap: 6px;
+        gap: 0;
         font: 12px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
         pointer-events: none;
       }
@@ -95,7 +95,11 @@
         border-radius: 8px;
         pointer-events: auto;
       }
-      .menu.shown { display: flex; }
+      /* Fills the space under the button, so moving down to the list never
+         counts as leaving it. */
+      .holder { display: none; padding-top: 6px; pointer-events: auto; }
+      .holder.shown { display: block; }
+      .holder .menu { display: flex; }
       .item {
         display: flex;
         gap: 16px;
@@ -118,12 +122,13 @@
           stroke-width="1.8" stroke-linejoin="round" style="color: var(--bolt)"/></svg>
         <span class="label"></span>
       </div>
-      <div class="menu"></div>
+      <div class="holder"><div class="menu"></div></div>
     </div>`;
   const wrap = root.querySelector(".wrap");
   const button = root.querySelector(".btn");
   const label = root.querySelector(".label");
   const menu = root.querySelector(".menu");
+  const holder = root.querySelector(".holder");
   (document.body || document.documentElement).appendChild(host);
 
   let video = null;
@@ -278,7 +283,7 @@
   }
 
   function closeMenu() {
-    menu.classList.remove("shown");
+    holder.classList.remove("shown");
     menu.textContent = "";
   }
 
@@ -301,7 +306,7 @@
       });
       menu.appendChild(item);
     }
-    menu.classList.add("shown");
+    holder.classList.add("shown");
   }
 
   function pageFileName(candidate) {
@@ -329,16 +334,23 @@
   }
 
   // ---- Pointer and clicks on the button ----
+  // A pointer that slips off for a moment doesn't close the list.
+  const LEAVE_GRACE_MS = 350;
+  let leaveTimer = 0;
   wrap.addEventListener("mouseenter", () => {
     overUi = true;
     clearTimeout(idleTimer);
-    expand();
+    clearTimeout(leaveTimer);
+    if (!holder.classList.contains("shown")) expand();
   });
   wrap.addEventListener("mouseleave", () => {
-    overUi = false;
-    closeMenu();
-    collapse();
-    idleTimer = setTimeout(hide, IDLE_MS);
+    clearTimeout(leaveTimer);
+    leaveTimer = setTimeout(() => {
+      overUi = false;
+      closeMenu();
+      collapse();
+      idleTimer = setTimeout(hide, IDLE_MS);
+    }, LEAVE_GRACE_MS);
   });
 
   button.addEventListener("click", (e) => {
