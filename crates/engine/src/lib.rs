@@ -14,6 +14,7 @@ mod http;
 mod integration;
 mod limiter;
 mod media;
+mod mux;
 mod persist;
 mod segment;
 mod sender;

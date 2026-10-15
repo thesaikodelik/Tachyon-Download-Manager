@@ -1,8 +1,6 @@
 //! A small dialog for things Tachyon has to tell the user: a download limit
 //! reached, a threat found by the virus scanner…
 
-use std::rc::Rc;
-
 use gpui::{App, AppContext, Context, FontWeight, SharedString, Window, div, prelude::*, px, size};
 
 use crate::app;
@@ -21,8 +19,6 @@ pub struct MessageDialog {
     kind: Kind,
     heading: SharedString,
     body: SharedString,
-    /// A button that does something, shown next to "Not now" instead of OK.
-    action: Option<(SharedString, Rc<dyn Fn(&mut App)>)>,
 }
 
 /// Shows a message with an OK button.
@@ -31,31 +27,8 @@ pub fn show(kind: Kind, title: &str, heading: impl Into<SharedString>, body: imp
     let body = body.into();
     let window_title = SharedString::from(title.to_string());
     let bounds = app::centered(size(px(440.), px(150.)), cx);
-    app::open_styled(app::dialog_options(title, bounds), cx, |_, cx| {
-        cx.new(|_| MessageDialog { title: window_title, kind, heading, body, action: None })
-    })
-    .ok();
-    cx.activate(true);
-}
-
-/// Asks the user to do something: `action` runs if they press the `label` button.
-pub fn ask(
-    title: &str,
-    heading: impl Into<SharedString>,
-    body: impl Into<SharedString>,
-    label: impl Into<SharedString>,
-    action: impl Fn(&mut App) + 'static,
-    cx: &mut App,
-) {
-    let heading = heading.into();
-    let body = body.into();
-    let window_title = SharedString::from(title.to_string());
-    let action: Option<(SharedString, Rc<dyn Fn(&mut App)>)> = Some((label.into(), Rc::new(action)));
-    let bounds = app::centered(size(px(440.), px(150.)), cx);
-    app::open_styled(app::dialog_options(title, bounds), cx, |_, cx| {
-        cx.new(|_| MessageDialog { title: window_title, kind: Kind::Info, heading, body, action })
-    })
-    .ok();
+    app::open_styled(app::dialog_options(title, bounds), cx, |_, cx| cx.new(|_| MessageDialog { title: window_title, kind, heading, body }))
+        .ok();
     cx.activate(true);
 }
 
@@ -99,28 +72,16 @@ impl Render for MessageDialog {
                         div()
                             .flex()
                             .justify_end()
-                            .gap(px(8.))
                             .px(px(18.))
                             .py(px(10.))
                             .bg(theme.chrome)
                             .border_t_1()
                             .border_color(theme.border)
-                            .child(match self.action.clone() {
-                                Some((label, action)) => div()
-                                    .flex()
-                                    .gap(px(8.))
-                                    .child(Button::new("act", label).primary().on_click(move |_, window, cx| {
-                                        window.remove_window();
-                                        action(cx);
-                                    }))
-                                    .child(Button::new("not-now", "Not now").on_click(|_, window, _| window.remove_window()))
-                                    .into_any_element(),
-                                None => div()
-                                    .w(px(110.))
-                                    .flex()
-                                    .child(Button::new("ok", "OK").primary().fill().on_click(|_, window, _| window.remove_window()))
-                                    .into_any_element(),
-                            }),
+                            .child(
+                                div().w(px(110.)).flex().child(
+                                    Button::new("ok", "OK").primary().fill().on_click(|_, window, _| window.remove_window()),
+                                ),
+                            ),
                     ),
             ))
     }

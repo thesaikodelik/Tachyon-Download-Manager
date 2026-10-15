@@ -103,7 +103,6 @@ fn tick(cx: &mut App) {
                     cx,
                 );
             }
-            EngineEvent::MediaToolMissing => offer_media_tool(cx),
             EngineEvent::Captured(request) => {
                 open_add_dialog(AddPrefill::Captured(request), cx);
             }
@@ -135,47 +134,6 @@ fn tick(cx: &mut App) {
             }
         }
     }
-}
-
-/// Offers to fetch yt-dlp, which video pages such as YouTube need; once per run.
-fn offer_media_tool(cx: &mut App) {
-    static ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if ASKED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-        return;
-    }
-    crate::message_dialog::ask(
-        "Video Downloads",
-        "Download yt-dlp to save videos?",
-        "YouTube and many other sites send picture and sound in pieces. Tachyon uses yt-dlp, a free open-source tool (about 18 MB from GitHub), to fetch and join them.",
-        "Download",
-        |cx| {
-            let install = engine(cx).install_media_tool();
-            cx.spawn(async move |cx| {
-                let result = install.await;
-                cx.update(|cx| match result {
-                    Ok(()) => crate::message_dialog::show(
-                        crate::message_dialog::Kind::Info,
-                        "Video Downloads",
-                        "yt-dlp is ready",
-                        "Point at the video again and pick a quality.",
-                        cx,
-                    ),
-                    Err(e) => {
-                        crate::message_dialog::show(
-                            crate::message_dialog::Kind::Warning,
-                            "Video Downloads",
-                            "yt-dlp couldn't be downloaded",
-                            e.to_string(),
-                            cx,
-                        );
-                    }
-                })
-                .ok();
-            })
-            .detach();
-        },
-        cx,
-    );
 }
 
 fn on_completed(id: DownloadId, cx: &mut App) {

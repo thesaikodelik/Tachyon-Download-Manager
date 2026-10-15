@@ -108,13 +108,9 @@ impl integration::Host for IntegrationHost {
         let inner = self.0.upgrade();
         Box::pin(async move {
             let inner = inner.ok_or("shutting down")?;
-            let tools = crate::media::tools(&inner.tools_dir());
-            if tools.yt_dlp.is_none() {
-                inner.push_event(EngineEvent::MediaToolMissing);
-                return Err("yt-dlp missing".into());
-            }
             let settings = inner.settings.read().clone();
-            crate::media::list(&url, &settings, &tools).await
+            let client = inner.client.read().clone();
+            crate::media::list(&url, &settings, &client, &inner.tools_dir()).await
         })
     }
 
@@ -245,17 +241,6 @@ impl Engine {
         crate::media::tools(&self.inner.tools_dir())
     }
 
-    /// Downloads yt-dlp into Tachyon's data folder.
-    pub fn install_media_tool(&self) -> impl Future<Output = Result<(), EngineError>> + Send + 'static {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let client = self.inner.client.read().clone();
-        let tools_dir = self.inner.tools_dir();
-        self.inner.handle.spawn(async move {
-            let _ = tx.send(crate::media::install_yt_dlp(&client, &tools_dir).await.map(|_| ()));
-        });
-        async move { rx.await.unwrap_or(Err(EngineError::Cancelled)) }
-    }
-
     /// Asks the server about `spec` without downloading anything.
     pub fn probe(&self, spec: RequestSpec) -> impl Future<Output = Result<ProbeInfo, EngineError>> + Send + 'static {
         let mut spec = spec;
@@ -316,6 +301,14 @@ impl Engine {
 
     /// A download already in the list for `url` (as entered or after redirects).
     pub fn find_by_url(&self, url: &str) -> Option<DownloadSnapshot> {
+        self.find_same(&RequestSpec::new(url))
+    }
+
+    /// The latest download of the same thing as `spec`: the same address, and for a
+    /// video page the same quality (another quality is another file).
+    pub fn find_same(&self, spec: &RequestSpec) -> Option<DownloadSnapshot> {
+        let url = spec.url.as_str();
+        let format = spec.media.as_ref().map(|m| m.format.as_str());
         let normalize = |u: &str| url::Url::parse(u.trim()).map(|u| u.to_string()).unwrap_or_else(|_| u.trim().to_string());
         let wanted = normalize(url);
         let id = {
@@ -324,6 +317,7 @@ impl Engine {
                 .records
                 .values()
                 .filter(|r| normalize(&r.spec.url) == wanted || r.final_url.as_deref().map(normalize) == Some(wanted.clone()))
+                .filter(|r| r.spec.media.as_ref().map(|m| m.format.as_str()) == format)
                 .max_by_key(|r| r.added_at)
                 .map(|r| r.id)
         };

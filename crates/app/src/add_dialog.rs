@@ -312,7 +312,7 @@ impl AddDialog {
         if self.allow_duplicate {
             return false;
         }
-        let Some(existing) = self.engine.find_by_url(&self.request_spec(cx).url) else {
+        let Some(existing) = self.engine.find_same(&self.request_spec(cx)) else {
             return false;
         };
         match self.engine.settings().duplicate_action {
