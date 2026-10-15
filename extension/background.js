@@ -71,6 +71,29 @@ function ensureRunning() {
   return starting;
 }
 
+/** The browser's cookies for a video page's site and its subdomains, so Tachyon
+ *  reaches videos that need the user signed in, as the browser does. */
+async function siteCookies(pageUrl) {
+  try {
+    const parts = new URL(pageUrl).hostname.split(".");
+    // "youtube.com" from "www.youtube.com"; "bbc.co.uk" from "www.bbc.co.uk".
+    const secondLevel = parts.length > 2 && parts.at(-1).length === 2 && parts.at(-2).length <= 3;
+    const site = parts.slice(secondLevel ? -3 : -2).join(".");
+    const cookies = await chrome.cookies.getAll({ domain: site });
+    return cookies.map((c) => ({
+      domain: c.domain,
+      path: c.path,
+      secure: c.secure,
+      hostOnly: c.hostOnly,
+      expirationDate: c.expirationDate ?? null,
+      name: c.name,
+      value: c.value,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 async function cookieHeader(url) {
   try {
     const cookies = await chrome.cookies.getAll({ url });
@@ -99,6 +122,7 @@ async function postDownload({ url, referrer, filename, mediaFormat, size }) {
     userAgent: navigator.userAgent,
     mediaFormat: mediaFormat || "",
     size: size || null,
+    cookieJar: mediaFormat ? await siteCookies(url) : [],
   };
   try {
     const response = await fetch(endpoint(port, "/v1/download"), {
@@ -127,7 +151,7 @@ async function askFormats(url) {
     const response = await fetch(endpoint(port, "/v1/media/formats"), {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Tachyon-Client": "extension" },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, cookieJar: await siteCookies(url) }),
       signal: AbortSignal.timeout(55000),
     });
     if (response.status === 503) return { missing: true };

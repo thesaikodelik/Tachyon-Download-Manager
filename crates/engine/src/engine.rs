@@ -104,13 +104,14 @@ impl integration::Host for IntegrationHost {
     fn media_formats(
         &self,
         url: String,
+        cookies: Vec<crate::types::BrowserCookie>,
     ) -> std::pin::Pin<Box<dyn Future<Output = Result<crate::media::MediaInfo, String>> + Send>> {
         let inner = self.0.upgrade();
         Box::pin(async move {
             let inner = inner.ok_or("shutting down")?;
             let settings = inner.settings.read().clone();
             let client = inner.client.read().clone();
-            crate::media::list(&url, &settings, &client, &inner.tools_dir()).await
+            crate::media::list(&url, &cookies, &settings, &client, &inner.tools_dir()).await
         })
     }
 
@@ -704,7 +705,8 @@ impl Inner {
         let user_name = request
             .file_name
             .as_deref()
-            .map(http::sanitize_file_name)
+            // A whole title or typed name: separators in it are part of the name.
+            .map(http::clean_file_name)
             .filter(|n| !n.is_empty());
         let name_locked = user_name.is_some() || probed.is_some();
         let base_name = user_name

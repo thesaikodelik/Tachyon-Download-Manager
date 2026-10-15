@@ -38,6 +38,7 @@ pub(crate) trait Host: Send + Sync {
     fn media_formats(
         &self,
         url: String,
+        cookies: Vec<crate::types::BrowserCookie>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<crate::media::MediaInfo, String>> + Send>>;
 }
 
@@ -71,11 +72,17 @@ struct CaptureBody {
     media_format: Option<String>,
     #[serde(default)]
     size: Option<u64>,
+    /// The site's cookies, for a video page.
+    #[serde(default)]
+    cookie_jar: Vec<crate::types::BrowserCookie>,
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MediaQuery {
     url: String,
+    #[serde(default)]
+    cookie_jar: Vec<crate::types::BrowserCookie>,
 }
 
 pub(crate) async fn serve(port: u16, cancel: CancellationToken, host: Arc<dyn Host>) {
@@ -215,7 +222,7 @@ async fn handle(mut stream: TcpStream, peer: SocketAddr, port: u16, host: Arc<dy
                 respond(&mut stream, "422 Unprocessable Entity", r#"{"error":"unsupported url"}"#).await;
                 return;
             }
-            match host.media_formats(query.url).await {
+            match host.media_formats(query.url, query.cookie_jar).await {
                 Ok(info) => respond(&mut stream, "200 OK", &serde_json::to_string(&info).unwrap_or_default()).await,
                 Err(e) if e == "yt-dlp missing" => {
                     respond(&mut stream, "503 Service Unavailable", r#"{"error":"yt-dlp missing"}"#).await
@@ -256,7 +263,7 @@ async fn handle(mut stream: TcpStream, peer: SocketAddr, port: u16, host: Arc<dy
                     media: capture
                         .media_format
                         .filter(|f| !f.is_empty())
-                        .map(|format| crate::types::MediaSpec { format, size: capture.size }),
+                        .map(|format| crate::types::MediaSpec { format, size: capture.size, cookies: capture.cookie_jar }),
                 },
                 file_name: capture.filename.filter(|f| !f.is_empty()),
                 description: capture.description.unwrap_or_default(),

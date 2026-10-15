@@ -13,12 +13,12 @@ use std::time::Duration;
 use reqwest::Client;
 use serde::Serialize;
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 
 use crate::error::EngineError;
 use crate::task::{TaskEnv, TaskInput, TaskOutcome, TaskShared};
-use crate::types::{DownloadStatus, ProxyMode, Settings};
+use crate::types::{BrowserCookie, DownloadStatus, ProxyMode, Settings};
 
 const YT_DLP: &str = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };
 const FFMPEG: &str = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
@@ -228,10 +228,55 @@ fn last_error(stderr: &str) -> String {
         .unwrap_or_else(|| stderr.lines().last().unwrap_or("yt-dlp failed").trim().to_string())
 }
 
-/// Asks yt-dlp what `url` offers.
-pub(crate) async fn list(url: &str, settings: &Settings, client: &Client, tools_dir: &Path) -> Result<MediaInfo, String> {
+/// The browser's cookies in the file format yt-dlp reads, removed when dropped.
+struct CookieFile(PathBuf);
+
+impl CookieFile {
+    fn write(tools_dir: &Path, cookies: &[BrowserCookie]) -> Option<Self> {
+        if cookies.is_empty() {
+            return None;
+        }
+        let mut text = String::from("# Netscape HTTP Cookie File\n");
+        for c in cookies {
+            // A cookie for subdomains too is written with a leading dot.
+            let domain = if c.host_only { c.domain.trim_start_matches('.').to_string() } else if c.domain.starts_with('.') { c.domain.clone() } else { format!(".{}", c.domain) };
+            let flag = |b: bool| if b { "TRUE" } else { "FALSE" };
+            let path = if c.path.is_empty() { "/" } else { c.path.as_str() };
+            let expires = c.expiration_date.map(|t| t as i64).unwrap_or(0);
+            text.push_str(&format!("{domain}\t{}\t{path}\t{}\t{expires}\t{}\t{}\n", flag(!c.host_only), flag(c.secure), c.name, c.value));
+        }
+        let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let path = tools_dir.join(format!("cookies-{unique}.txt"));
+        std::fs::create_dir_all(tools_dir).ok()?;
+        std::fs::write(&path, text).ok()?;
+        Some(Self(path))
+    }
+
+    fn add_to(&self, cmd: &mut Command) {
+        cmd.arg("--cookies").arg(&self.0);
+    }
+}
+
+impl Drop for CookieFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Asks yt-dlp what `url` offers, signed in with the browser's `cookies`.
+pub(crate) async fn list(
+    url: &str,
+    cookies: &[BrowserCookie],
+    settings: &Settings,
+    client: &Client,
+    tools_dir: &Path,
+) -> Result<MediaInfo, String> {
     let (yt_dlp, js) = ready_tools(client, settings, tools_dir).await.map_err(|e| format!("couldn't get yt-dlp: {e}"))?;
     let mut cmd = command(&yt_dlp, settings, js.as_deref());
+    let jar = CookieFile::write(tools_dir, cookies);
+    if let Some(jar) = &jar {
+        jar.add_to(&mut cmd);
+    }
     cmd.arg("-J").arg("--").arg(url);
     let output = tokio::time::timeout(LIST_TIMEOUT, cmd.output())
         .await
@@ -257,8 +302,26 @@ fn is_direct(format: &Value) -> bool {
     format["protocol"].as_str().is_some_and(|p| p.starts_with("http"))
 }
 
-fn has(format: &Value, codec: &str) -> bool {
-    format[codec].as_str().is_some_and(|c| c != "none")
+/// Whether a format carries a picture. Some sites don't say which codecs they use;
+/// yt-dlp then leaves them empty, and a format with a height is a video.
+fn has_picture(format: &Value) -> bool {
+    match format["vcodec"].as_str() {
+        Some(codec) => codec != "none",
+        None => format["height"].is_u64() || format["width"].is_u64(),
+    }
+}
+
+/// Whether a format carries sound; unknown counts as yes, as for yt-dlp.
+fn has_sound(format: &Value) -> bool {
+    match format["acodec"].as_str() {
+        Some(codec) => codec != "none",
+        None => true,
+    }
+}
+
+/// Skips storyboards and other formats that are neither picture nor sound.
+fn is_media(format: &Value) -> bool {
+    format["ext"].as_str() != Some("mhtml") && (has_picture(format) || format["acodec"].as_str().is_some_and(|c| c != "none"))
 }
 
 fn is_mp4(format: &Value) -> bool {
@@ -284,8 +347,8 @@ fn choices(json: &Value, has_ffmpeg: bool) -> MediaInfo {
             f["tbr"].as_f64().unwrap_or(0.) as u64,
         )
     };
-    let sound_only = |f: &&Value| has(f, "acodec") && !has(f, "vcodec");
-    let picture_only = |f: &&Value| has(f, "vcodec") && !has(f, "acodec");
+    let sound_only = |f: &&Value| is_media(f) && has_sound(f) && !has_picture(f);
+    let picture_only = |f: &&Value| is_media(f) && has_picture(f) && !has_sound(f);
     let m4a = formats
         .iter()
         .filter(sound_only)
@@ -294,7 +357,7 @@ fn choices(json: &Value, has_ffmpeg: bool) -> MediaInfo {
     let any_sound = formats.iter().filter(sound_only).max_by_key(|f| f["tbr"].as_f64().unwrap_or(0.) as u64);
 
     let mut heights: Vec<u64> =
-        formats.iter().filter(|f| has(f, "vcodec")).filter_map(|f| f["height"].as_u64()).filter(|h| *h >= 144).collect();
+        formats.iter().filter(|f| is_media(f) && has_picture(f)).filter_map(|f| f["height"].as_u64()).filter(|h| *h >= 144).collect();
     heights.sort_unstable_by(|a, b| b.cmp(a));
     heights.dedup();
 
@@ -311,7 +374,11 @@ fn choices(json: &Value, has_ffmpeg: bool) -> MediaInfo {
         let ffmpeg_merge = any_sound
             .filter(|_| has_ffmpeg)
             .and_then(|sound| formats.iter().filter(picture_only).filter(at).max_by_key(rank).map(|p| (p, sound)));
-        let whole = formats.iter().filter(|f| has(f, "vcodec") && has(f, "acodec")).filter(at).max_by_key(rank);
+        let whole = formats
+            .iter()
+            .filter(|f| is_media(f) && has_picture(f) && has_sound(f))
+            .filter(at)
+            .max_by_key(|f| (is_mp4(f), rank(f)));
         let choice = if let Some((picture, sound)) = own_merge {
             MediaChoice {
                 label: label(picture),
@@ -348,6 +415,10 @@ fn choices(json: &Value, has_ffmpeg: bool) -> MediaInfo {
             ext: sound["ext"].as_str().unwrap_or("m4a").to_string(),
             size: size_of(sound),
         });
+    }
+    // Whatever the list says, never an empty menu: yt-dlp's own pick.
+    if list.iter().all(|c| c.label == "Audio only") && formats.iter().any(is_media) {
+        list.insert(0, MediaChoice { label: "Best available".into(), format: "b[ext=mp4]/b".into(), ext: "mp4".into(), size: None });
     }
     MediaInfo { title, choices: list }
 }
@@ -419,8 +490,60 @@ fn downloaded_file(line: &str) -> Option<PathBuf> {
     rest.strip_suffix(" has already been downloaded").map(|p| PathBuf::from(p.trim()))
 }
 
-/// Downloads a video page with yt-dlp. Stopping kills yt-dlp; starting again resumes
-/// from its partial files.
+/// The picked quality first, then ever more forgiving ways to get a video of about
+/// that quality, so a site's quirk or a vanished format doesn't end the download:
+/// ffmpeg joining instead of Tachyon, any MP4 picture up to that height, any picture
+/// at all, and finally whatever single file the site offers.
+fn fallbacks(format: &str, has_ffmpeg: bool) -> Vec<String> {
+    let mut list = vec![format.to_string()];
+    if format.starts_with("ba") {
+        list.push("ba/b".into());
+        return list;
+    }
+    if has_ffmpeg && let Some((picture, sound)) = format.split_once(',') {
+        list.push(format!("({picture})+({sound})"));
+    }
+    let height = format
+        .split("[height=")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .and_then(|h| h.parse::<u32>().ok());
+    match height {
+        Some(h) => {
+            list.push(format!("bv*[height<={h}][ext=mp4],ba[ext=m4a]"));
+            if has_ffmpeg {
+                list.push(format!("bv*[height<={h}]+ba"));
+            }
+            list.push(format!("b[height<={h}][ext=mp4]/b[height<={h}]/b"));
+        }
+        None => list.push("b[ext=mp4]/b".into()),
+    }
+    list.dedup();
+    list
+}
+
+/// Updates Tachyon's own yt-dlp now; true if it ran. Sites change often, and a
+/// fresh yt-dlp is the usual cure for a download that stopped working.
+async fn update_now(yt_dlp: &Path, settings: &Settings, tools_dir: &Path) -> bool {
+    if !yt_dlp.starts_with(tools_dir) {
+        // Someone else's copy (on the PATH): theirs to update.
+        return false;
+    }
+    let _guard = install_lock().lock().await;
+    let mut cmd = command(yt_dlp, settings, None);
+    cmd.arg("-U");
+    match tokio::time::timeout(Duration::from_secs(90), cmd.output()).await {
+        Ok(Ok(out)) => {
+            log::info!("yt-dlp update: {}", String::from_utf8_lossy(&out.stdout).trim());
+            out.status.success()
+        }
+        _ => false,
+    }
+}
+
+/// Downloads a video page with yt-dlp, trying [`fallbacks`] in turn. Stopping kills
+/// yt-dlp; starting again resumes from its partial files. If every way fails, what
+/// yt-dlp said is kept in a report next to Tachyon's data.
 pub(crate) async fn run(input: TaskInput, shared: Arc<TaskShared>, env: TaskEnv) -> TaskOutcome {
     let Some(media) = input.spec.media.clone() else {
         return TaskOutcome::Failed(EngineError::Config("not a video page".into()));
@@ -436,13 +559,78 @@ pub(crate) async fn run(input: TaskInput, shared: Arc<TaskShared>, env: TaskEnv)
     if let Err(e) = std::fs::create_dir_all(&input.directory) {
         return TaskOutcome::Failed(EngineError::Io(e.to_string()));
     }
+    let ladder = fallbacks(&media.format, find(&env.tools_dir, FFMPEG).is_some());
+    let mut failures: Vec<(String, String)> = Vec::new();
+    let mut updated = false;
+    let mut step = 0;
+    while step < ladder.len() {
+        let format = &ladder[step];
+        match attempt(&input, &shared, &env, &yt_dlp, js.as_deref(), &media, format).await {
+            Ok(outcome) => {
+                if !failures.is_empty() {
+                    log::info!("video {} downloaded on try {} ({format})", input.id, failures.len() + 1);
+                }
+                return outcome;
+            }
+            Err(error) => {
+                log::warn!("video {} with {format}: {}", input.id, last_error(&error));
+                failures.push((format.clone(), error));
+                if shared.cancel.is_cancelled() {
+                    return TaskOutcome::Paused;
+                }
+                // Once per download: a fresh yt-dlp, then the same way again.
+                if !updated {
+                    updated = true;
+                    if update_now(&yt_dlp, &env.settings, &env.tools_dir).await {
+                        continue;
+                    }
+                }
+                step += 1;
+            }
+        }
+    }
+    let first = failures.first().map(|(_, e)| last_error(e)).unwrap_or_default();
+    let report = write_report(&env.tools_dir, &input, &failures);
+    let detail = report.map(|r| format!(" — details in {}", r.display())).unwrap_or_default();
+    TaskOutcome::Failed(EngineError::Protocol(format!("{first}{detail}")))
+}
+
+/// Keeps what yt-dlp said on each try, for when a video can't be downloaded at all.
+fn write_report(tools_dir: &Path, input: &TaskInput, failures: &[(String, String)]) -> Option<PathBuf> {
+    let dir = tools_dir.parent()?.join("logs");
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join(format!("video-{}.log", input.id));
+    let mut text = format!("{}\n{}\n\n", input.spec.url, chrono::Local::now().to_rfc2822());
+    for (format, error) in failures {
+        text.push_str(&format!("--- {format}\n{}\n", error.trim()));
+    }
+    std::fs::write(&path, text).ok()?;
+    Some(path)
+}
+
+/// One try at a video page in `format`. Ok with the outcome (finished or stopped),
+/// or Err with what went wrong.
+async fn attempt(
+    input: &TaskInput,
+    shared: &TaskShared,
+    env: &TaskEnv,
+    yt_dlp: &Path,
+    js: Option<&Path>,
+    media: &crate::types::MediaSpec,
+    format: &str,
+) -> Result<TaskOutcome, String> {
     let target = input.directory.join(&input.file_name);
     // "picture,sound": yt-dlp fetches both and Tachyon joins them.
-    let own_merge = media.format.contains(',');
+    let own_merge = format.contains(',');
     let work_dir = input.part_dir.clone().unwrap_or_else(|| input.directory.clone());
-    let mut cmd = command(&yt_dlp, &env.settings, js.as_deref());
-    cmd.arg("-f").arg(&media.format);
-    if media.format.contains('+') {
+    let stem = target.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "video".into());
+    let mut cmd = command(yt_dlp, &env.settings, js);
+    let jar = CookieFile::write(&env.tools_dir, &media.cookies);
+    if let Some(jar) = &jar {
+        jar.add_to(&mut cmd);
+    }
+    cmd.arg("-f").arg(format);
+    if format.contains('+') {
         cmd.arg("--merge-output-format").arg("mp4");
         if let Some(ffmpeg) = find(&env.tools_dir, FFMPEG) {
             cmd.arg("--ffmpeg-location").arg(ffmpeg);
@@ -455,33 +643,27 @@ pub(crate) async fn run(input: TaskInput, shared: Arc<TaskShared>, env: TaskEnv)
     if limit > 0 {
         cmd.arg("--limit-rate").arg(limit.to_string());
     }
+    // Networks drop and sites stall: yt-dlp retries before giving up.
+    cmd.args(["--retries", "10", "--fragment-retries", "10", "--extractor-retries", "3"]);
     cmd.args(["--newline", "--continue", "--progress-template"]).arg(format!(
         "download:{PROGRESS_TAG} %(progress.downloaded_bytes)s %(progress.total_bytes)s \
          %(progress.total_bytes_estimate)s %(progress.speed)s"
     ));
     cmd.arg("-o");
     if own_merge {
-        let stem = target.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "video".into());
         cmd.arg(work_dir.join(format!("{stem}.f%(format_id)s.%(ext)s")));
     } else {
         cmd.arg(&target);
     }
     cmd.arg("--").arg(&input.spec.url);
 
-    let mut child = match cmd.spawn() {
-        Ok(child) => child,
-        Err(e) => return TaskOutcome::Failed(EngineError::Config(format!("could not run yt-dlp: {e}"))),
-    };
+    let mut child = cmd.spawn().map_err(|e| format!("could not run yt-dlp: {e}"))?;
     let stdout = child.stdout.take().expect("piped");
     let stderr = child.stderr.take().expect("piped");
     let errors = tokio::spawn(async move {
-        let mut text = String::new();
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            text.push_str(&line);
-            text.push('\n');
-        }
-        text
+        let mut text = Vec::new();
+        let _ = BufReader::new(stderr).read_to_end(&mut text).await;
+        String::from_utf8_lossy(&text).into_owned()
     });
 
     shared.set_media_progress(0, media.size);
@@ -494,7 +676,7 @@ pub(crate) async fn run(input: TaskInput, shared: Arc<TaskShared>, env: TaskEnv)
         tokio::select! {
             _ = shared.cancel.cancelled() => {
                 let _ = child.kill().await;
-                return TaskOutcome::Paused;
+                return Ok(TaskOutcome::Paused);
             }
             // Byte lines, so a stray non-UTF-8 name can't end the reading.
             read = reader.read_until(b'\n', &mut raw) => match read {
@@ -520,43 +702,69 @@ pub(crate) async fn run(input: TaskInput, shared: Arc<TaskShared>, env: TaskEnv)
             },
         }
     }
-    let status = child.wait().await;
+    let status = child.wait().await.map_err(|e| e.to_string())?;
     let stderr = errors.await.unwrap_or_default();
-    match status {
-        Ok(status) if status.success() => {}
-        Ok(_) => return TaskOutcome::Failed(EngineError::Protocol(last_error(&stderr))),
-        Err(e) => return TaskOutcome::Failed(EngineError::Io(e.to_string())),
+    if !status.success() {
+        return Err(if stderr.trim().is_empty() { format!("yt-dlp stopped ({status})") } else { stderr });
     }
     if own_merge {
         // Named by yt-dlp's output, or failing that found by name in the folder.
-        let stem = target.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        let picked = pick_parts(&parts).or_else(|| pick_parts(&parts_in(&work_dir, &stem)));
-        let Some((picture, sound)) = picked else {
-            return TaskOutcome::Failed(EngineError::Protocol(format!("expected picture and sound, got {} files", parts.len())));
-        };
-        let (picture, sound) = (&picture, &sound);
+        let (picture, sound) = pick_parts(&parts)
+            .or_else(|| pick_parts(&parts_in(&work_dir, &stem)))
+            .ok_or_else(|| format!("expected picture and sound, got {} files", parts.len()))?;
         shared.set_speed(0);
         shared.set_phase(DownloadStatus::Finalizing);
-        let (picture, sound, out) = (picture.clone(), sound.clone(), target.clone());
-        match tokio::task::spawn_blocking(move || crate::mux::merge(&picture, &sound, &out)).await {
+        let out = target.clone();
+        let (p, s) = (picture.clone(), sound.clone());
+        match tokio::task::spawn_blocking(move || crate::mux::merge(&p, &s, &out)).await {
             Ok(Ok(())) => {
-                for part in &parts {
-                    let _ = std::fs::remove_file(part);
-                }
+                let _ = std::fs::remove_file(&picture);
+                let _ = std::fs::remove_file(&sound);
             }
-            Ok(Err(e)) => return TaskOutcome::Failed(EngineError::Io(format!("joining picture and sound failed: {e}"))),
-            Err(e) => return TaskOutcome::Failed(EngineError::Io(e.to_string())),
+            Ok(Err(e)) => return Err(format!("joining picture and sound failed: {e}")),
+            Err(e) => return Err(e.to_string()),
         }
     }
-    match std::fs::metadata(&target) {
-        Ok(meta) => TaskOutcome::Completed { file_name: input.file_name, size: meta.len() },
-        Err(e) => TaskOutcome::Failed(EngineError::Io(format!("the finished video is missing: {e}"))),
-    }
+    let meta = std::fs::metadata(&target).map_err(|e| format!("the finished video is missing: {e}"))?;
+    Ok(TaskOutcome::Completed { file_name: input.file_name.clone(), size: meta.len() })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn formats_without_codecs_are_whole_videos() {
+        // archive.org names no codecs.
+        let json = serde_json::json!({
+            "title": "Popeye",
+            "formats": [
+                {"format_id": "0", "ext": "mp4", "height": 240, "width": 320, "filesize": 2000},
+                {"format_id": "1", "ext": "ogv", "height": 304, "width": 400, "filesize": 1900}
+            ]
+        });
+        let menu = choices(&json, false);
+        let labels: Vec<&str> = menu.choices.iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(labels, ["304p", "240p"]);
+        assert_eq!(menu.choices[1].format, "0");
+        // Nothing usable by height: still something to pick.
+        let bare = serde_json::json!({"title": "x", "formats": [{"format_id": "a", "ext": "mp4", "vcodec": "h264"}]});
+        assert_eq!(choices(&bare, false).choices[0].label, "Best available");
+    }
+
+    #[test]
+    fn fallbacks_get_ever_more_forgiving() {
+        let picked = "bv*[height=720][ext=mp4][vcodec^=avc1]/bv*[height=720][ext=mp4],ba[ext=m4a]";
+        assert_eq!(
+            fallbacks(picked, false),
+            [picked, "bv*[height<=720][ext=mp4],ba[ext=m4a]", "b[height<=720][ext=mp4]/b[height<=720]/b"]
+        );
+        let with_ffmpeg = fallbacks(picked, true);
+        assert_eq!(with_ffmpeg[1], "(bv*[height=720][ext=mp4][vcodec^=avc1]/bv*[height=720][ext=mp4])+(ba[ext=m4a])");
+        assert!(with_ffmpeg.contains(&"bv*[height<=720]+ba".to_string()));
+        assert_eq!(fallbacks("ba[ext=m4a]/ba", true), ["ba[ext=m4a]/ba", "ba/b"]);
+        assert_eq!(fallbacks("18", false), ["18", "b[ext=mp4]/b"]);
+    }
 
     #[test]
     fn menu_has_one_entry_per_height_and_the_sound() {

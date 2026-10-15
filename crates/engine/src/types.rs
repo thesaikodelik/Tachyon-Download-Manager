@@ -108,7 +108,27 @@ pub struct MediaSpec {
     pub format: String,
     /// Approximate size of the finished file.
     pub size: Option<u64>,
+    /// The browser's cookies for the site, so videos that need the user signed in
+    /// (or that YouTube asks to prove they aren't a bot for) download as in the browser.
+    pub cookies: Vec<BrowserCookie>,
 }
+
+/// One browser cookie, as the extension reads it.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BrowserCookie {
+    pub domain: String,
+    pub path: String,
+    pub secure: bool,
+    /// Sent only to `domain` itself, not its subdomains.
+    pub host_only: bool,
+    /// Unix time; None for a cookie that ends with the browser session.
+    pub expiration_date: Option<f64>,
+    pub name: String,
+    pub value: String,
+}
+
+impl Eq for BrowserCookie {}
 
 impl RequestSpec {
     pub fn new(url: impl Into<String>) -> Self {

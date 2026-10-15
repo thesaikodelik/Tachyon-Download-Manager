@@ -280,21 +280,52 @@ fn split_params(value: &str) -> Vec<String> {
 pub fn sanitize_file_name(name: &str) -> String {
     // Servers sometimes send full paths; keep only the last component.
     let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
-    let cleaned: String = base
-        .chars()
-        .map(|c| match c {
-            ':' => '-',
-            c if c.is_control() => '_',
+    clean_file_name(base)
+}
+
+/// Names Windows keeps for devices; a file can't be called that, whatever its extension.
+const RESERVED_NAMES: [&str; 22] = [
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1",
+    "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+/// Turns any text — a video's title, a name typed by the user — into a file name
+/// every system accepts: separators become dashes ("AC/DC | Live" → "AC-DC - Live"),
+/// characters Windows forbids and invisible ones go, odd spaces become plain ones
+/// and runs of them one, and trailing dots and spaces are trimmed.
+pub fn clean_file_name(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        let c = match c {
+            ':' | '|' | '/' | '\\' => '-',
+            '"' => '\'',
+            '<' | '>' | '*' | '?' => continue,
+            '\u{200B}'..='\u{200F}' | '\u{2060}' | '\u{FEFF}' => continue,
+            c if c.is_whitespace() => ' ',
+            c if c.is_control() => continue,
             c => c,
-        })
-        .collect();
-    let trimmed = cleaned.trim().trim_start_matches('.').trim();
-    let mut out: String = trimmed.to_string();
-    // APFS allows 255 UTF-8 bytes per component; leave room for a " (n)" suffix and ".part".
-    while out.len() > 200 {
-        out.pop();
+        };
+        if c == ' ' && (out.is_empty() || out.ends_with(' ')) {
+            continue;
+        }
+        out.push(c);
     }
-    out
+    let mut out = out.trim_start_matches(['.', ' ']).trim_end_matches(['.', ' ']).to_string();
+    let stem = out.split('.').next().unwrap_or("");
+    if RESERVED_NAMES.iter().any(|r| r.eq_ignore_ascii_case(stem.trim())) {
+        out.insert(0, '_');
+    }
+    // 255 bytes per name on every file system; leave room for " (n)" and the part suffix.
+    const MAX: usize = 200;
+    if out.len() > MAX {
+        let ext = out.rfind('.').map(|i| out[i..].to_string()).filter(|e| e.len() <= 10).unwrap_or_default();
+        let mut stem = out[..out.len() - ext.len()].to_string();
+        while stem.len() + ext.len() > MAX {
+            stem.pop();
+        }
+        out = format!("{}{ext}", stem.trim_end_matches(['.', ' ']));
+    }
+    if out.is_empty() { "download".into() } else { out }
 }
 
 fn extension_for_mime(mime: &str) -> Option<&'static str> {
@@ -328,6 +359,24 @@ fn extension_for_mime(mime: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn any_title_becomes_a_valid_file_name() {
+        assert_eq!(clean_file_name("AC/DC | Live?.mp4"), "AC-DC - Live.mp4");
+        assert_eq!(
+            clean_file_name("Iranian Jazz \u{2022} Rain | 1\u{a0}Hour  Lofi.mp4"),
+            "Iranian Jazz \u{2022} Rain - 1 Hour Lofi.mp4"
+        );
+        assert_eq!(clean_file_name("  .hidden name. "), "hidden name");
+        assert_eq!(clean_file_name("con.txt"), "_con.txt");
+        assert_eq!(clean_file_name("a\u{200B}b\tc"), "ab c");
+        assert_eq!(clean_file_name("???"), "download");
+        let long = format!("{}.mp4", "x".repeat(400));
+        let cut = clean_file_name(&long);
+        assert!(cut.len() <= 200 && cut.ends_with(".mp4"), "{cut}");
+        // A server's path keeps only its last part.
+        assert_eq!(sanitize_file_name("/files/report:v2.pdf"), "report-v2.pdf");
+    }
 
     #[test]
     fn parses_content_range() {

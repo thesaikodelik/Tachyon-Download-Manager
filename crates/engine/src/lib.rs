@@ -26,7 +26,7 @@ pub use engine::Engine;
 pub use media::{MediaChoice, MediaInfo, MediaTools};
 pub use error::EngineError;
 pub use fsutil::PART_SUFFIX;
-pub use http::{derive_file_name, sanitize_file_name};
+pub use http::{clean_file_name, derive_file_name, sanitize_file_name};
 pub use types::*;
 
 mod secret;
