@@ -144,6 +144,13 @@ pub fn show_window(window: &Window) {
     imp::show_window(window)
 }
 
+/// Stops a window accepting files dropped on it. Tachyon has no use for them, and
+/// GPUI 0.2's drop handler misreads the shell's file lists and crashes the app, as
+/// when a finished download is dragged out over a Tachyon window.
+pub fn refuse_file_drops(window: &Window) {
+    imp::refuse_file_drops(window)
+}
+
 /// Puts a window in front of every other app and gives it the keyboard, even while
 /// another app (such as the browser that sent a download) is in front.
 pub fn bring_to_front(window: &Window) {
@@ -619,6 +626,13 @@ mod imp {
         }
     }
 
+    pub fn refuse_file_drops(window: &Window) {
+        if let Some(hwnd) = hwnd(window) {
+            // SAFETY: undoes GPUI's RegisterDragDrop on a live window.
+            let _ = unsafe { windows::Win32::System::Ole::RevokeDragDrop(windows::Win32::Foundation::HWND(hwnd as _)) };
+        }
+    }
+
     pub fn bring_to_front(window: &Window) {
         use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
         use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -736,6 +750,8 @@ mod imp {
     pub fn show_window(_: &Window) {}
 
     pub fn bring_to_front(_: &Window) {}
+
+    pub fn refuse_file_drops(_: &Window) {}
 
     pub fn cloak(_: &Window, _: bool) {}
 }

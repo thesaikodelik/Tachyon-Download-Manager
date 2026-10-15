@@ -181,6 +181,7 @@ pub fn open_styled<V: Render + 'static>(
     cx.open_window(options, move |window, cx| {
         let theme = crate::theme::Theme::for_appearance(window.appearance());
         crate::platform::sync_chrome(window, crate::theme::backdrop(), theme.dark);
+        crate::platform::refuse_file_drops(window);
         if visible {
             crate::platform::cloak(window, true);
             // Two frames: dialogs that fit their content take their final size in the second.
