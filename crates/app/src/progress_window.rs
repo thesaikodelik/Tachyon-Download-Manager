@@ -21,7 +21,7 @@ use crate::theme::Theme;
 use crate::widgets::text_input::{InputEvent, TextInput};
 use crate::widgets::{
     Button, Checkbox, card, field_row, fit_window_height, title_bar, icon, progress_bar, radio_group, section_title,
-    segment_bar, separator, tabs, truncated,
+    segment_bar, separator, tabs, truncated, truncated_name,
 };
 
 pub struct ProgressWindow {
@@ -422,7 +422,7 @@ impl ProgressWindow {
                                     .flex_col()
                                     .flex_1()
                                     .min_w_0()
-                                    .child(div().w_full().font_weight(FontWeight::SEMIBOLD).child(truncated(d.file_name.clone())))
+                                    .child(div().w_full().font_weight(FontWeight::SEMIBOLD).child(truncated_name(d.file_name.clone())))
                                     .child(div().w_full().text_size(px(12.)).text_color(theme.muted).child(truncated(d.url.clone()))),
                             ),
                     )
@@ -552,7 +552,7 @@ impl Render for ProgressWindow {
                             .flex_col()
                             .flex_1()
                             .min_w_0()
-                            .child(div().w_full().text_size(px(14.)).font_weight(FontWeight::SEMIBOLD).child(truncated(d.file_name.clone())))
+                            .child(div().w_full().text_size(px(14.)).font_weight(FontWeight::SEMIBOLD).child(truncated_name(d.file_name.clone())))
                             .child(div().w_full().text_size(px(12.)).text_color(theme.muted).child(truncated(d.url.clone()))),
                     ),
             )

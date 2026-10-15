@@ -199,7 +199,9 @@ async fn ready_tools(client: &Client, settings: &Settings, tools_dir: &Path) -> 
 /// A yt-dlp command with the options every call shares.
 fn command(yt_dlp: &Path, settings: &Settings, js: Option<&Path>) -> Command {
     let mut cmd = Command::new(yt_dlp);
-    cmd.args(["--no-playlist", "--no-colors", "--no-warnings"]);
+    // UTF-8 output: otherwise Windows' code page mangles titles such as "Jazz • Rain".
+    cmd.args(["--no-playlist", "--no-colors", "--no-warnings", "--encoding", "utf-8"]);
+    cmd.env("PYTHONIOENCODING", "utf-8").env("PYTHONUTF8", "1");
     if let Some(js) = js {
         cmd.arg("--js-runtimes").arg(format!("quickjs:{}", js.display()));
     }
@@ -387,6 +389,27 @@ impl Progress {
     }
 }
 
+/// The picture (.mp4) and sound (.m4a) among downloaded parts, if both exist.
+fn pick_parts(parts: &[PathBuf]) -> Option<(PathBuf, PathBuf)> {
+    let with_ext = |ext: &str| {
+        parts.iter().find(|p| p.is_file() && p.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext))).cloned()
+    };
+    Some((with_ext("mp4")?, with_ext("m4a")?))
+}
+
+/// yt-dlp's finished parts for `stem` in `dir`: "<stem>.f<format>.<ext>".
+fn parts_in(dir: &Path, stem: &str) -> Vec<PathBuf> {
+    let prefix = format!("{stem}.f");
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with(&prefix)))
+        .filter(|p| !p.extension().is_some_and(|e| e == "part" || e == "ytdl"))
+        .collect()
+}
+
 /// The file a "[download] …" line names, if it names one.
 fn downloaded_file(line: &str) -> Option<PathBuf> {
     let rest = line.strip_prefix("[download] ")?;
@@ -464,22 +487,27 @@ pub(crate) async fn run(input: TaskInput, shared: Arc<TaskShared>, env: TaskEnv)
     shared.set_media_progress(0, media.size);
     let mut progress = Progress::default();
     let mut parts: Vec<PathBuf> = Vec::new();
-    let mut lines = BufReader::new(stdout).lines();
+    let mut reader = BufReader::new(stdout);
+    let mut raw = Vec::new();
     loop {
+        raw.clear();
         tokio::select! {
             _ = shared.cancel.cancelled() => {
                 let _ = child.kill().await;
                 return TaskOutcome::Paused;
             }
-            line = lines.next_line() => match line {
-                Ok(Some(line)) => {
-                    if let Some(speed) = progress.update(&line) {
+            // Byte lines, so a stray non-UTF-8 name can't end the reading.
+            read = reader.read_until(b'\n', &mut raw) => match read {
+                Ok(n) if n > 0 => {
+                    let line = String::from_utf8_lossy(&raw);
+                    let line = line.trim_end();
+                    if let Some(speed) = progress.update(line) {
                         shared.set_phase_downloading();
                         shared.set_speed(speed);
                         // Before the sound starts, the known size beats yt-dlp's guess.
                         let total = media.size.unwrap_or(0).max(progress.total());
                         shared.set_media_progress(progress.downloaded(), (total > 0).then_some(total));
-                    } else if let Some(file) = downloaded_file(&line) {
+                    } else if let Some(file) = downloaded_file(line) {
                         if !parts.contains(&file) {
                             parts.push(file);
                         }
@@ -500,9 +528,13 @@ pub(crate) async fn run(input: TaskInput, shared: Arc<TaskShared>, env: TaskEnv)
         Err(e) => return TaskOutcome::Failed(EngineError::Io(e.to_string())),
     }
     if own_merge {
-        let [picture, sound] = parts.as_slice() else {
+        // Named by yt-dlp's output, or failing that found by name in the folder.
+        let stem = target.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let picked = pick_parts(&parts).or_else(|| pick_parts(&parts_in(&work_dir, &stem)));
+        let Some((picture, sound)) = picked else {
             return TaskOutcome::Failed(EngineError::Protocol(format!("expected picture and sound, got {} files", parts.len())));
         };
+        let (picture, sound) = (&picture, &sound);
         shared.set_speed(0);
         shared.set_phase(DownloadStatus::Finalizing);
         let (picture, sound, out) = (picture.clone(), sound.clone(), target.clone());

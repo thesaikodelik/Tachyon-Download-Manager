@@ -746,16 +746,64 @@ pub fn stepper(
         .child(step(1, "+"))
 }
 
-/// Single line of text that fills its parent's width and ends in "…" when too long.
+/// Single line of text that fills its parent's width and is shortened with "…" when
+/// too long. Every shortened text in Tachyon goes through this, so long names and
+/// addresses look the same everywhere: addresses and other text lose their end, file
+/// names their middle (see [`truncated_name`]).
 ///
 /// GPUI 0.2's `truncate()` caches the unconstrained measurement inside flex rows and
-/// then never truncates, so this element truncates against its painted bounds instead.
+/// then never truncates (and shows the middle of centred text), so this element
+/// truncates against its painted bounds instead.
 pub struct TruncatedText {
     text: SharedString,
+    /// Shorten in the middle, keeping the end of the name and its extension.
+    middle: bool,
+    centered: bool,
 }
 
+/// Text shortened at its end: "https://example.com/very/lo…".
 pub fn truncated(text: impl Into<SharedString>) -> TruncatedText {
-    TruncatedText { text: text.into() }
+    TruncatedText { text: text.into(), middle: false, centered: false }
+}
+
+/// A file name shortened in the middle, so its type still shows:
+/// "Iranian Jazz • Like Tears…Fusion.mp4".
+pub fn truncated_name(name: impl Into<SharedString>) -> TruncatedText {
+    TruncatedText { text: name.into(), middle: true, centered: false }
+}
+
+impl TruncatedText {
+    pub fn centered(mut self) -> Self {
+        self.centered = true;
+        self
+    }
+}
+
+/// Characters kept from the end of a file name's stem, besides its extension.
+const NAME_TAIL: usize = 6;
+
+/// `text` with its middle replaced by "…" so it fits `width`, keeping the extension
+/// and a few characters before it; None if even that doesn't fit.
+fn fit_middle(text: &str, width: Pixels, measure: &mut dyn FnMut(&str) -> Pixels) -> Option<String> {
+    let (stem, ext) = match text.rfind('.') {
+        Some(dot) if dot > 0 && text.len() - dot <= 9 => (&text[..dot], &text[dot..]),
+        _ => (text, ""),
+    };
+    let stem_chars: Vec<char> = stem.chars().collect();
+    let keep = NAME_TAIL.min(stem_chars.len() / 2);
+    let tail: String = stem_chars[stem_chars.len() - keep..].iter().collect::<String>() + ext;
+    let head = &stem_chars[..stem_chars.len() - keep];
+    let candidate = |n: usize| format!("{}…{}", head[..n].iter().collect::<String>().trim_end(), tail);
+    if measure(&candidate(0)) > width {
+        return None;
+    }
+    // The longest beginning that still fits.
+    let (mut low, mut high) = (0, head.len());
+    while low < high {
+        let mid = (low + high).div_ceil(2);
+        if measure(&candidate(mid)) <= width { low = mid } else { high = mid - 1 }
+    }
+    Some(candidate(low))
 }
 
 impl IntoElement for TruncatedText {
@@ -805,6 +853,20 @@ impl gpui::Element for TruncatedText {
     ) -> Self::PrepaintState {
         let style = window.text_style();
         let font_size = style.font_size.to_pixels(window.rem_size());
+        let shape = |text: SharedString, window: &mut Window| {
+            let runs = vec![style.to_run(text.len())];
+            window.text_system().shape_line(text, font_size, &runs, None)
+        };
+        let full = shape(self.text.clone(), window);
+        if full.width <= bounds.size.width {
+            return Some(full);
+        }
+        if self.middle {
+            let mut measure = |s: &str| shape(SharedString::from(s.to_string()), window).width;
+            if let Some(fitted) = fit_middle(&self.text, bounds.size.width, &mut measure) {
+                return Some(shape(fitted.into(), window));
+            }
+        }
         let mut runs = vec![style.to_run(self.text.len())];
         let text = window
             .text_system()
@@ -824,7 +886,11 @@ impl gpui::Element for TruncatedText {
         cx: &mut App,
     ) {
         if let Some(line) = line.take() {
-            line.paint(bounds.origin, window.line_height(), window, cx).ok();
+            let mut origin = bounds.origin;
+            if self.centered {
+                origin.x += ((bounds.size.width - line.width) / 2.).max(px(0.));
+            }
+            line.paint(origin, window.line_height(), window, cx).ok();
         }
     }
 }

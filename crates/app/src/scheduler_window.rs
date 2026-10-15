@@ -14,7 +14,7 @@ use crate::format;
 use crate::theme::Theme;
 use crate::widgets::text_input::TextInput;
 use crate::widgets::{
-    Button, Checkbox, icon, radio_group, section_title, separator, stepper, tabs, title_bar, truncated,
+    Button, Checkbox, icon, radio_group, section_title, separator, stepper, tabs, title_bar, truncated_name,
 };
 
 const DAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -274,7 +274,7 @@ impl SchedulerWindow {
                             }))
                             .child(div().w(px(22.)).text_color(theme_copy.muted).child(format!("{}", ix + 1)))
                             .child(icon(Icon::for_category(&d.category), px(14.), theme_copy.muted))
-                            .child(div().flex_1().min_w_0().child(truncated(d.file_name.clone())))
+                            .child(div().flex_1().min_w_0().child(truncated_name(d.file_name.clone())))
                             .child(div().w(px(80.)).text_color(theme_copy.muted).child(format::size_cell(d)))
                             .child(div().w(px(80.)).text_color(theme_copy.muted).child(format::status_cell(d)))
                     })),

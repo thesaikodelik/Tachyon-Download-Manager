@@ -22,7 +22,7 @@ use crate::file_icons::file_icon_element;
 use crate::format;
 use crate::theme::Theme;
 use crate::widgets::{
-    Button, ToolbarButton, gliding_progress_bar, icon, progress_bar, separator, title_bar, truncated,
+    Button, ToolbarButton, gliding_progress_bar, icon, progress_bar, separator, title_bar, truncated, truncated_name,
 };
 
 actions!(
@@ -894,7 +894,7 @@ impl MainWindow {
                     .when(width.is_none(), |this| this.flex_1().min_w(px(180.)))
                     .when(is_sorted, |this| this.text_color(theme.text).font_weight(FontWeight::MEDIUM))
                     .on_click(cx.listener(move |this, _, _, cx| this.set_sort(column, cx)))
-                    .child(div().truncate().child(title))
+                    .child(truncated(title))
                     .when(is_sorted, |this| {
                         this.child(icon(
                             if ascending { Icon::ChevronUp } else { Icon::ChevronDown },
@@ -918,7 +918,7 @@ impl MainWindow {
                 } else {
                     file_icon_element(&d.path(), &d.category, px(16.), theme)
                 })
-                .child(truncated(d.file_name.clone()))
+                .child(truncated_name(d.file_name.clone()))
                 .into_any_element(),
             Column::Name => {
                 let (row_icon, color) = match d.status {
@@ -933,13 +933,13 @@ impl MainWindow {
                     .gap(px(8.))
                     .min_w_0()
                     .child(icon(row_icon, px(15.), color))
-                    .child(truncated(d.file_name.clone()))
+                    .child(truncated_name(d.file_name.clone()))
                     .into_any_element()
             }
             Column::Queue => div()
                 .when(d.in_queue, |this| this.child(icon(Icon::List, px(13.), muted)))
                 .into_any_element(),
-            Column::Size => div().truncate().child(format::size_cell(d)).into_any_element(),
+            Column::Size => truncated(format::size_cell(d)).into_any_element(),
             Column::Status => {
                 let text = format::status_cell(d);
                 let color = match d.status {
@@ -976,15 +976,15 @@ impl MainWindow {
                     })
                     .into_any_element()
             }
-            Column::TimeLeft => div().truncate().child(format::eta_cell(d)).into_any_element(),
-            Column::Rate => div()
-                .truncate()
-                .child(if d.status == DownloadStatus::Downloading { format::speed(d.speed) } else { String::new() })
-                .into_any_element(),
+            Column::TimeLeft => truncated(format::eta_cell(d)).into_any_element(),
+            Column::Rate => {
+                truncated(if d.status == DownloadStatus::Downloading { format::speed(d.speed) } else { String::new() })
+                    .into_any_element()
+            }
             Column::LastTry => div()
-                .truncate()
+                .w_full()
                 .text_color(muted)
-                .child(format::date(d.last_try.or(d.completed_at).or(Some(d.added_at))))
+                .child(truncated(format::date(d.last_try.or(d.completed_at).or(Some(d.added_at)))))
                 .into_any_element(),
             Column::Description => div()
                 .text_color(muted)

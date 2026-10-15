@@ -16,7 +16,7 @@ use crate::platform::{self, DragOutcome};
 use crate::theme::Theme;
 use crate::widgets::text_input::TextInput;
 use crate::widgets::{
-    Button, Checkbox, Tooltip, card, field_row, field_row_inline, fit_window_height, title_bar, icon, separator, truncated,
+    Button, Checkbox, Tooltip, card, field_row, field_row_inline, fit_window_height, title_bar, icon, separator, truncated, truncated_name,
 };
 
 /// How far the pointer has to move with the button down before a drag starts.
@@ -150,7 +150,7 @@ impl CompleteDialog {
             })
             .when(!exists, |this| this.opacity(0.45))
             .child(file_icon_element(&path, &d.category, px(32.), theme))
-            .child(div().w_full().text_size(px(12.)).text_center().truncate().child(d.file_name.clone()))
+            .child(div().w_full().text_size(px(12.)).child(truncated_name(d.file_name.clone()).centered()))
             .child(
                 div()
                     .text_size(px(14.))
@@ -302,7 +302,7 @@ impl Render for CompleteDialog {
                             .gap(px(4.))
                             .child(div().text_size(px(15.)).font_weight(FontWeight::SEMIBOLD).child("Download complete"))
                             .child(field_row("Address", truncated(d.url.clone()), &theme))
-                            .child(field_row("File name", truncated(d.file_name.clone()), &theme))
+                            .child(field_row("File name", truncated_name(d.file_name.clone()), &theme))
                             .child(field_row("Folder", truncated(format::display_path(&d.directory)), &theme))
                             .child(field_row("Size", d.size.map(format::bytes).unwrap_or_default(), &theme)),
                     ),

@@ -72,9 +72,10 @@ pub fn title_bar(title: impl Into<SharedString>, maximizable: bool, window: &Win
                 .child(
                     div()
                         .text_size(px(12.))
+                        .flex_1()
+                        .min_w_0()
                         .text_color(if active { theme.text } else { theme.faint })
-                        .truncate()
-                        .child(title.into()),
+                        .child(super::truncated(title.into())),
                 ),
         )
         .child(caption_button("caption-min", "\u{E921}", WindowControlArea::Min, false, theme))

@@ -706,9 +706,10 @@ impl AddDialog {
             Some(false) => Some((Icon::Alert, "Can't resume", theme.warning)),
             None => None,
         };
-        // Pale tinted badges fade into light glass; there they are solid instead.
-        let solid_badges = theme.liquid && !theme.dark;
-        let white: gpui::Hsla = gpui::white();
+        // Pale tinted badges fade into glass, so on glass they are solid: white text on
+        // light glass, dark text on Smoke (as Windows 11's dark badges).
+        let solid_badges = theme.liquid;
+        let on_badge: gpui::Hsla = if theme.dark { gpui::black().opacity(0.85) } else { gpui::white() };
         div().relative().child(self.url_display.clone()).when_some(badge, |this, (glyph, label, color)| {
             this.child(
                 div()
@@ -729,8 +730,8 @@ impl AddDialog {
                                 .bg(if solid_badges { color } else { color.opacity(0.12) })
                                 .text_size(px(11.))
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(if solid_badges { white } else { color })
-                                .child(icon(glyph, px(11.), if solid_badges { white } else { color }))
+                                .text_color(if solid_badges { on_badge } else { color })
+                                .child(icon(glyph, px(11.), if solid_badges { on_badge } else { color }))
                                 .child(label),
                         ),
                     ),
