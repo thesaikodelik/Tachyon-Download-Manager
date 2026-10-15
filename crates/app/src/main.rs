@@ -21,6 +21,7 @@ mod platform;
 mod post_action;
 mod progress_window;
 mod scheduler_window;
+mod setup;
 #[cfg(feature = "dev-snapshots")]
 mod snapshot;
 mod theme;
@@ -57,6 +58,15 @@ fn main() {
     // Started by a browser so its extension can open Tachyon: do that and leave.
     if native_host::is_host_launch() {
         native_host::serve();
+        return;
+    }
+    // Tachyon is its own installer and uninstaller.
+    if setup::is_uninstall_launch() {
+        setup::run(true);
+        return;
+    }
+    if setup::is_setup_launch() {
+        setup::run(false);
         return;
     }
 
@@ -114,6 +124,10 @@ fn main() {
             }
         }
         app::open_main_window_with(!(start_in_tray && tray::is_active()), cx);
+        // From the installer's last step: how to add the browser extension.
+        if std::env::args().any(|a| a == setup::BROWSER_SETUP_FLAG) {
+            app::open_options_at(7, cx);
+        }
     });
 }
 

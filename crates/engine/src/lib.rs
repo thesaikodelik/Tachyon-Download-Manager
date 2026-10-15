@@ -23,7 +23,7 @@ mod types;
 
 pub use categories::{GENERAL, classify, default_categories, extension_of, looks_downloadable};
 pub use engine::Engine;
-pub use media::{MediaChoice, MediaInfo, MediaTools};
+pub use media::{MediaChoice, MediaInfo, MediaTools, prepare_tools};
 pub use error::EngineError;
 pub use fsutil::PART_SUFFIX;
 pub use http::{clean_file_name, derive_file_name, sanitize_file_name};

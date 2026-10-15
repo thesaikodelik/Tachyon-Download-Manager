@@ -412,6 +412,19 @@ pub fn open_links_window(batch: tachyon_engine::LinkBatch, cx: &mut App) {
     }
 }
 
+/// Options at the page numbered `tab` (Browser is the last).
+pub fn open_options_at(tab: usize, cx: &mut App) {
+    open_options(cx);
+    if let Some(handle) = cx.global::<AppState>().options_window {
+        handle
+            .update(cx, |options, _, cx| {
+                options.tab = tab;
+                cx.notify();
+            })
+            .ok();
+    }
+}
+
 pub fn open_scheduler(cx: &mut App) {
     if activate(cx.global::<AppState>().scheduler_window, cx) {
         return;

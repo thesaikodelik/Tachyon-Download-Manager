@@ -140,3 +140,17 @@ pub fn register(data_dir: &Path) {
 
 #[cfg(not(windows))]
 pub fn register(_: &Path) {}
+
+/// Takes Tachyon off every browser's list of messaging hosts (when uninstalled).
+#[cfg(windows)]
+pub fn unregister() {
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RegDeleteTreeW};
+    for key in CHROMIUM_KEYS.iter().chain([&FIREFOX_KEY]) {
+        let key: Vec<u16> = format!("{key}\\{HOST_NAME}").encode_utf16().chain(Some(0)).collect();
+        // SAFETY: NUL-terminated string.
+        unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, key.as_ptr()) };
+    }
+}
+
+#[cfg(not(windows))]
+pub fn unregister() {}

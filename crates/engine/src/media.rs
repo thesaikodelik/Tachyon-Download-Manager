@@ -158,6 +158,7 @@ fn install_lock() -> &'static tokio::sync::Mutex<()> {
 /// to date in the background. Part of Tachyon, so the user is never asked.
 pub(crate) async fn ensure_yt_dlp(client: &Client, settings: &Settings, tools_dir: &Path) -> Result<PathBuf, EngineError> {
     let _guard = install_lock().lock().await;
+    sweep_cookie_files(tools_dir);
     if cfg!(windows) {
         let dir = tools_dir.join(YT_DLP_DIR);
         let exe = dir.join(YT_DLP);
@@ -205,6 +206,20 @@ pub(crate) async fn ensure_yt_dlp(client: &Client, settings: &Settings, tools_di
     log::info!("fetching yt-dlp");
     fetch(client, YT_DLP_URL, &own).await?;
     Ok(own)
+}
+
+/// Fetches yt-dlp and QuickJS into `<data_dir>/tools` now, for the installer's
+/// "Video downloads" option, so the first video needs no wait. Blocks.
+pub fn prepare_tools(data_dir: &Path) -> Result<(), String> {
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
+    runtime.block_on(async {
+        let settings = Settings::default();
+        let client = crate::http::build_client(&settings).map_err(|e| e.to_string())?;
+        let tools_dir = data_dir.join("tools");
+        ensure_yt_dlp(&client, &settings, &tools_dir).await.map_err(|e| e.to_string())?;
+        ensure_qjs(&client, &tools_dir).await.ok_or("QuickJS couldn't be fetched")?;
+        Ok(())
+    })
 }
 
 /// Fetches the latest unpacked yt-dlp and puts it in place of the current one.
@@ -314,6 +329,17 @@ fn last_error(stderr: &str) -> String {
         .unwrap_or_else(|| stderr.lines().last().unwrap_or("yt-dlp failed").trim().to_string())
 }
 
+/// Removes cookie files older than a few minutes: one yt-dlp still held when its
+/// read was cut short couldn't be removed then, and cookies mustn't linger on disk.
+fn sweep_cookie_files(tools_dir: &Path) {
+    for old in std::fs::read_dir(tools_dir).into_iter().flatten().flatten() {
+        let is_jar = old.file_name().to_string_lossy().starts_with("cookies-");
+        if is_jar && age(&old.path()).is_some_and(|a| a > Duration::from_secs(300)) {
+            let _ = std::fs::remove_file(old.path());
+        }
+    }
+}
+
 /// The browser's cookies in the file format yt-dlp reads, removed when dropped.
 struct CookieFile(PathBuf);
 
@@ -331,6 +357,7 @@ impl CookieFile {
             let expires = c.expiration_date.map(|t| t as i64).unwrap_or(0);
             text.push_str(&format!("{domain}\t{}\t{path}\t{}\t{expires}\t{}\t{}\n", flag(!c.host_only), flag(c.secure), c.name, c.value));
         }
+        sweep_cookie_files(tools_dir);
         let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
         let path = tools_dir.join(format!("cookies-{unique}.txt"));
         std::fs::create_dir_all(tools_dir).ok()?;
